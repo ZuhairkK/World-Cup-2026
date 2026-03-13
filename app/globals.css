@@ -1,26 +1,128 @@
 @import "tailwindcss";
 
+/* ─── Design Tokens ─────────────────────────────────────────────────────────── */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Dark sports-broadcast base */
+  --bg-base:        #0a0b0f;
+  --bg-surface:     #111318;
+  --bg-card:        #16191f;
+  --bg-card-hover:  #1c2028;
+
+  /* Gold / amber accent palette */
+  --gold-bright:    #f5c842;
+  --gold-mid:       #d4a017;
+  --gold-dim:       #8a6810;
+  --amber:          #e07b00;
+
+  /* Text */
+  --text-primary:   #f0ead6;
+  --text-secondary: #9a8f75;
+  --text-muted:     #4a4535;
+
+  /* Borders */
+  --border-gold:    rgba(245, 200, 66, 0.35);
+  --border-subtle:  rgba(255, 255, 255, 0.06);
+
+  /* Transition timing */
+  --ease-out-expo:  cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+/* ─── Base Reset ────────────────────────────────────────────────────────────── */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
+html,
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+#__next,
+main {
+  height: 100%;
+  width: 100%;
+}
+
+/* ─── Mapbox GL overrides ───────────────────────────────────────────────────── */
+.mapboxgl-ctrl-logo,
+.mapboxgl-ctrl-attrib {
+  display: none !important;
+}
+
+/* ─── FIFA Street World Tour Design Tokens ─────────────────────────────────── */
+:root {
+  --street-font:    var(--font-street), "Impact", "Arial Narrow", Arial, sans-serif;
+
+  /* Gold / amber accent palette (replaces orange) */
+  --accent-gold:        #D4A017;
+  --accent-gold-bright: #F5C842;
+  --accent-gold-dim:    #8A6810;
+  --accent-gold-glow:   rgba(212, 160, 23, 0.45);
+
+  /* Keep mode-specific and utility colours */
+  --street-green:   #00C864;
+  --xbox-green:     #107C10;
+  --street-red:     #E61C1C;
+  --street-blue:    #3B82F6;
+
+  /* Panel styling */
+  --street-panel-bg:  rgba(5, 5, 9, 0.95);
+  --panel-border:     rgba(212, 160, 23, 0.35);
+  --panel-header-bg:  rgba(212, 160, 23, 0.08);
+}
+
+/* ─── Juggling animation keyframes ─────────────────────────────────────────── */
+@keyframes ballJuggle {
+  0%   { transform: translate(0px, 0px) rotate(0deg); }
+  15%  { transform: translate(-8px, -55px) rotate(90deg); }
+  40%  { transform: translate(-16px, -120px) rotate(220deg); }
+  52%  { transform: translate(-18px, -130px) rotate(265deg); }
+  70%  { transform: translate(-12px, -70px) rotate(316deg); }
+  88%  { transform: translate(-3px, -18px) rotate(348deg); }
+  100% { transform: translate(0px, 0px) rotate(360deg); }
+}
+
+@keyframes kickLeg {
+  0%   { transform: rotate(0deg); }
+  8%   { transform: rotate(-18deg); }
+  28%  { transform: rotate(32deg); }
+  45%  { transform: rotate(18deg); }
+  72%  { transform: rotate(4deg); }
+  100% { transform: rotate(0deg); }
+}
+
+@keyframes bodySway {
+  0%   { transform: rotate(0deg); }
+  28%  { transform: rotate(-3.5deg); }
+  58%  { transform: rotate(1.5deg); }
+  100% { transform: rotate(0deg); }
+}
+
+/* SVG animation classes */
+.juggle-body {
+  transform-box: fill-box;
+  transform-origin: bottom center;
+  animation: bodySway 1.4s ease-in-out infinite;
+}
+
+.juggle-leg {
+  transform-box: fill-box;
+  transform-origin: top center;
+  animation: kickLeg 1.4s ease-in-out infinite;
+}
+
+.juggle-ball {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: ballJuggle 1.4s ease-in-out infinite;
 }
