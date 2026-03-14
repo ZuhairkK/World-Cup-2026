@@ -13,8 +13,39 @@ export interface Coords {
 export interface Anchor {
   id: string;           // e.g. "vancouver-airport"
   label: string;        // Display name shown in UI
-  type: "airport" | "city-center" | "train-station";
+  type: "airport" | "city-center" | "train-station" | "hotel";
   coords: Coords;
+}
+
+// ─── Hotel types ──────────────────────────────────────────────────────────────
+
+export type HotelTier = "budget" | "mid" | "luxury";
+
+/** A curated hotel option for a host city */
+export interface Hotel {
+  id: string;
+  name: string;
+  cityId: string;                 // matches Stadium.id
+  coords: Coords;
+  tier: HotelTier;
+  priceRange: string;             // e.g. "$120–$200 / night"
+  distanceToStadiumKm: number;   // straight-line km
+  efficiency: string;             // human-readable insight, e.g. "5 min walk · Best value"
+}
+
+// ─── Hidden Gem types ─────────────────────────────────────────────────────────
+
+export type GemCategory = "food" | "jersey";
+
+/** A local hidden gem — food spot or jersey vendor — near a host stadium */
+export interface HiddenGem {
+  id: string;
+  cityId: string;       // matches Stadium.id
+  name: string;
+  category: GemCategory;
+  coords: Coords;
+  description: string;  // One-line description of the place
+  tip: string;          // Local knowledge / insider tip
 }
 
 /** A 2026 FIFA World Cup stadium */

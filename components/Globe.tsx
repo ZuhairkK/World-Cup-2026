@@ -24,6 +24,7 @@ import * as THREE from "three";
 import { STADIUMS } from "@/data/stadiums";
 import type { Stadium } from "@/data/types";
 import JugglingAnimation from "@/components/JugglingAnimation";
+import NintendoSwitch from "@/components/NintendoSwitch";
 
 
 // ─── Utility: convert lat/lng to a 3D point on a unit sphere ─────────────────
@@ -270,10 +271,59 @@ function Scene({ zoomTarget, onZoomComplete, onStadiumSelect, isZooming }: Scene
   );
 }
 
-// ─── Globe label overlay ──────────────────────────────────────────────────────
-function GlobeLabel() {
+// ─── Globe title overlay — exact FIFA Street "Canada Transport Guide" match ───
+//
+// Reference: fifa_street_canada_transport_landing.png
+//   • "CANADA" in huge bold yellow at the very top, centered
+//   • "TRANSPORT GUIDE" in medium yellow directly below
+//   • City names row: VANCOUVER · EDMONTON · TORONTO in small white italic
+function GlobeTitle() {
   return (
-    <div className="pointer-events-none absolute bottom-8 left-1/2 -translate-x-1/2 text-center">
+    <div
+      className="pointer-events-none absolute left-1/2 top-8 -translate-x-1/2 text-center"
+      style={{ whiteSpace: "nowrap" }}
+    >
+      {/* "CANADA" — dominant yellow headline */}
+      <h1
+        style={{
+          fontFamily: "var(--street-font)",
+          fontSize: 82,
+          fontWeight: 900,
+          fontStyle: "italic",
+          textTransform: "uppercase",
+          letterSpacing: "-0.01em",
+          lineHeight: 0.88,
+          color: "#F5C842",
+          textShadow: [
+            "0 0 60px rgba(245,200,66,0.55)",
+            "0 4px 30px rgba(0,0,0,0.9)",
+            "2px 2px 0 rgba(0,0,0,0.5)",
+          ].join(", "),
+          marginBottom: 4,
+        }}
+      >
+        CANADA
+      </h1>
+
+      {/* "TRANSPORT GUIDE" — secondary yellow headline */}
+      <p
+        style={{
+          fontFamily: "var(--street-font)",
+          fontSize: 34,
+          fontWeight: 900,
+          fontStyle: "italic",
+          textTransform: "uppercase",
+          letterSpacing: "0.06em",
+          lineHeight: 1,
+          color: "#F5C842",
+          textShadow: "0 2px 16px rgba(0,0,0,0.8)",
+          marginBottom: 10,
+        }}
+      >
+        TRANSPORT GUIDE
+      </p>
+
+      {/* City names row — VANCOUVER · EDMONTON · TORONTO */}
       <p
         style={{
           fontFamily: "var(--street-font)",
@@ -281,54 +331,78 @@ function GlobeLabel() {
           fontWeight: 700,
           fontStyle: "italic",
           textTransform: "uppercase",
-          letterSpacing: "0.35em",
-          color: "rgba(255, 255, 255, 0.55)",
+          letterSpacing: "0.28em",
+          color: "rgba(255,255,255,0.72)",
+          textShadow: "0 1px 8px rgba(0,0,0,0.8)",
         }}
       >
-        Click a Stadium to Explore
+        Vancouver &nbsp;·&nbsp; Edmonton &nbsp;·&nbsp; Toronto
       </p>
     </div>
   );
 }
 
-// ─── Title overlay ────────────────────────────────────────────────────────────
-function GlobeTitle() {
+// ─── Globe label overlay — "CLICK A STADIUM TO EXPLORE" bottom prompt ─────────
+//
+// Reference: bottom-center text with a leading arrow indicator.
+// Also renders a minimal EA/FIFA badge bottom-left.
+function GlobeLabel() {
   return (
-    <div className="pointer-events-none absolute left-1/2 top-10 -translate-x-1/2 text-center">
-      <p
-        style={{
-          fontFamily: "var(--street-font)",
-          fontSize: 11,
-          fontWeight: 800,
-          fontStyle: "italic",
-          textTransform: "uppercase",
-          letterSpacing: "0.45em",
-          color: "var(--accent-gold)",
-          marginBottom: 6,
-        }}
+    <>
+      {/* Bottom-center CTA */}
+      <div
+        className="pointer-events-none absolute bottom-8 left-1/2 -translate-x-1/2 text-center"
+        style={{ whiteSpace: "nowrap" }}
       >
-        FIFA World Cup 2026
-      </p>
-      <h1
-        style={{
-          fontFamily: "var(--street-font)",
-          fontSize: 52,
-          fontWeight: 900,
-          fontStyle: "italic",
-          textTransform: "uppercase",
-          letterSpacing: "-0.02em",
-          lineHeight: 0.9,
-          color: "white",
-          textShadow: "0 0 40px rgba(212, 160, 23, 0.4), 0 4px 24px rgba(0,0,0,0.8)",
-        }}
+        <p
+          style={{
+            fontFamily: "var(--street-font)",
+            fontSize: 14,
+            fontWeight: 800,
+            fontStyle: "italic",
+            textTransform: "uppercase",
+            letterSpacing: "0.28em",
+            color: "rgba(255,255,255,0.85)",
+            textShadow: "0 2px 12px rgba(0,0,0,0.9)",
+          }}
+        >
+          ▶&nbsp; Click a Stadium to Explore
+        </p>
+      </div>
+
+      {/* EA Sports / FIFA Street badge — bottom-left */}
+      <div
+        className="pointer-events-none absolute bottom-7 left-8"
+        style={{ display: "flex", flexDirection: "column", gap: 1 }}
       >
-        Canada
-        <br />
-        <span style={{ color: "var(--accent-gold)", fontSize: 36 }}>
-          Transport Guide
+        <span
+          style={{
+            fontFamily: "var(--street-font)",
+            fontSize: 9,
+            fontWeight: 900,
+            fontStyle: "italic",
+            textTransform: "uppercase",
+            letterSpacing: "0.18em",
+            color: "rgba(255,255,255,0.3)",
+          }}
+        >
+          EA Sports
         </span>
-      </h1>
-    </div>
+        <span
+          style={{
+            fontFamily: "var(--street-font)",
+            fontSize: 11,
+            fontWeight: 900,
+            fontStyle: "italic",
+            textTransform: "uppercase",
+            letterSpacing: "0.1em",
+            color: "rgba(255,255,255,0.18)",
+          }}
+        >
+          FIFA Street
+        </span>
+      </div>
+    </>
   );
 }
 
@@ -357,7 +431,25 @@ export default function Globe({ onStadiumSelect }: GlobeProps) {
 
   return (
     <div className="relative w-full h-full" style={{ background: "var(--bg-base)" }}>
-      {/* Juggling video — rendered first so it sits below the Canvas in the stack */}
+
+      {/* ── Graffiti background — download (1).jpg (FIFA Street 2012 cover,   ──
+           Messi in front of a graffiti wall) heavily blurred + darkened.
+           Gives the urban street-art texture visible in the reference image.
+           No z-index set → sits at the very back of the stacking context.   */}
+      <div
+        aria-hidden="true"
+        style={{
+          position: "absolute",
+          inset: 0,
+          backgroundImage: "url('/download%20(1).jpg')",
+          backgroundSize: "cover",
+          backgroundPosition: "center",
+          filter: "blur(14px) brightness(0.18) saturate(0.7)",
+          transform: "scale(1.06)", // prevent blurred edges showing
+        }}
+      />
+
+      {/* Juggling video — rendered before canvas, z-index 1 floats above canvas */}
       <JugglingAnimation layer="background" />
 
       {/* Canvas with alpha:true so the 3D scene layers cleanly over the video */}
@@ -374,6 +466,10 @@ export default function Globe({ onStadiumSelect }: GlobeProps) {
           isZooming={isZooming}
         />
       </Canvas>
+
+      {/* Nintendo Switch — rendered after Canvas so it's always visible.
+           Low opacity (0.28) + pointer-events none = background decoration. */}
+      <NintendoSwitch />
 
       <GlobeTitle />
       <GlobeLabel />

@@ -1,6 +1,6 @@
 "use client";
 
-import type { Mode, RouteCache } from "@/data/types";
+import type { Mode, RouteCache, RouteResult } from "@/data/types";
 import routesData from "@/data/routes.json";
 
 const routes = routesData as RouteCache;
@@ -19,6 +19,8 @@ interface ModeCardsProps {
   anchorId: string;
   selectedMode: Mode;
   onModeSelect: (mode: Mode) => void;
+  /** When a hotel is selected, pass live-fetched routes to override the static cache */
+  hotelRoutes?: Partial<Record<Mode, RouteResult | null>>;
 }
 
 export default function ModeCards({
@@ -26,37 +28,40 @@ export default function ModeCards({
   anchorId,
   selectedMode,
   onModeSelect,
+  hotelRoutes,
 }: ModeCardsProps) {
   return (
     <div>
+      {/* "TRAVEL TIME" label — reference match */}
       <p
         style={{
           fontFamily: "var(--street-font)",
-          fontSize: 10,
-          fontWeight: 700,
+          fontSize: 9,
+          fontWeight: 900,
           fontStyle: "italic",
           textTransform: "uppercase",
-          letterSpacing: "0.3em",
-          color: "rgba(255,255,255,0.4)",
-          marginBottom: 10,
+          letterSpacing: "0.38em",
+          color: "rgba(255,255,255,0.55)",
+          marginBottom: 8,
         }}
       >
         Travel Time
       </p>
-      <div style={{ display: "flex", gap: 6 }}>
+      {/* 2 × 2 grid — reference: TRANSIT/CYCLING top row, WALKING/DRIVING bottom row */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
         {MODES.map((mode) => {
           const key    = `${stadiumId}__${anchorId}__${mode}`;
-          const result = routes[key];
+          const result = hotelRoutes ? hotelRoutes[mode] ?? null : routes[key];
           const meta   = MODE_META[mode];
           const active = mode === selectedMode;
 
           return (
+            // ── Mode card — reference: top colour strip, icon, large number, MIN label ──
             <button
               key={mode}
               onClick={() => onModeSelect(mode)}
               style={{
-                flex: 1,
-                padding: "0",
+                padding: 0,
                 background: active ? `${meta.color}18` : "rgba(255,255,255,0.03)",
                 border: active
                   ? `2px solid ${meta.color}`
@@ -66,27 +71,31 @@ export default function ModeCards({
                 transition: "all 0.2s ease",
                 overflow: "hidden",
                 textAlign: "center",
-                boxShadow: active ? `0 0 16px ${meta.color}30` : "none",
+                boxShadow: active ? `0 0 18px ${meta.color}35` : "none",
               }}
             >
-              {/* Color accent strip */}
+              {/* Top colour accent strip — prominent when active */}
               <div
                 style={{
-                  height: 3,
-                  background: active ? meta.color : "transparent",
+                  height: 4,
+                  background: active ? meta.color : "rgba(255,255,255,0.07)",
                   transition: "background 0.2s ease",
                 }}
               />
-              <div style={{ padding: "10px 4px 12px" }}>
-                <div style={{ fontSize: 18, marginBottom: 4 }}>{meta.icon}</div>
+              <div style={{ padding: "10px 6px 12px" }}>
+                {/* Mode icon */}
+                <div style={{ fontSize: 20, marginBottom: 4, lineHeight: 1 }}>
+                  {meta.icon}
+                </div>
+                {/* Mode label */}
                 <div
                   style={{
                     fontFamily: "var(--street-font)",
                     fontSize: 9,
-                    fontWeight: 700,
+                    fontWeight: 900,
                     fontStyle: "italic",
                     textTransform: "uppercase",
-                    letterSpacing: "0.12em",
+                    letterSpacing: "0.16em",
                     color: active ? meta.color : "rgba(255,255,255,0.3)",
                     marginBottom: 6,
                   }}
@@ -95,33 +104,41 @@ export default function ModeCards({
                 </div>
                 {result ? (
                   <>
+                    {/* Large bold time number — dominant element per reference */}
                     <div
                       style={{
                         fontFamily: "var(--street-font)",
-                        fontSize: 26,
+                        fontSize: 32,
                         fontWeight: 900,
                         fontStyle: "italic",
-                        lineHeight: 1,
-                        color: active ? "white" : "rgba(255,255,255,0.6)",
+                        lineHeight: 0.95,
+                        color: active ? "white" : "rgba(255,255,255,0.55)",
+                        textShadow: active ? `0 0 20px ${meta.color}55` : "none",
                       }}
                     >
                       {result.durationMin}
                     </div>
+                    {/* MIN label */}
                     <div
                       style={{
-                        fontFamily: "var(--font-geist-mono)",
+                        fontFamily: "var(--street-font)",
                         fontSize: 9,
-                        color: active ? meta.color : "rgba(255,255,255,0.2)",
-                        marginTop: 2,
+                        fontWeight: 700,
+                        fontStyle: "italic",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.12em",
+                        color: active ? meta.color : "rgba(255,255,255,0.22)",
+                        marginTop: 3,
                       }}
                     >
-                      min
+                      MIN
                     </div>
+                    {/* Distance — subtle secondary info */}
                     <div
                       style={{
                         fontFamily: "var(--font-geist-mono)",
                         fontSize: 9,
-                        color: "rgba(255,255,255,0.2)",
+                        color: "rgba(255,255,255,0.18)",
                         marginTop: 2,
                       }}
                     >
@@ -131,12 +148,14 @@ export default function ModeCards({
                 ) : (
                   <div
                     style={{
-                      fontFamily: "var(--font-geist-mono)",
-                      fontSize: 10,
-                      color: "rgba(255,255,255,0.2)",
+                      fontFamily: "var(--street-font)",
+                      fontSize: 22,
+                      fontWeight: 900,
+                      fontStyle: "italic",
+                      color: "rgba(255,255,255,0.18)",
                     }}
                   >
-                    N/A
+                    —
                   </div>
                 )}
               </div>

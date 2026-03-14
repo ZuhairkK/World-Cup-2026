@@ -25,6 +25,26 @@
 
   /* Transition timing */
   --ease-out-expo:  cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* ─── FIFA Street World Tour ──────────────────────────────────────────────── */
+  --street-font:    var(--font-street), "Impact", "Arial Narrow", Arial, sans-serif;
+
+  /* Gold / amber accent palette (replaces orange) */
+  --accent-gold:        #D4A017;
+  --accent-gold-bright: #F5C842;
+  --accent-gold-dim:    #8A6810;
+  --accent-gold-glow:   rgba(212, 160, 23, 0.45);
+
+  /* Mode-specific and utility colours */
+  --street-green:   #00C864;
+  --xbox-green:     #107C10;
+  --street-red:     #E61C1C;
+  --street-blue:    #3B82F6;
+
+  /* Panel styling */
+  --street-panel-bg:  rgba(5, 5, 9, 0.95);
+  --panel-border:     rgba(212, 160, 23, 0.35);
+  --panel-header-bg:  rgba(212, 160, 23, 0.08);
 }
 
 /* ─── Base Reset ────────────────────────────────────────────────────────────── */
@@ -59,28 +79,6 @@ main {
   display: none !important;
 }
 
-/* ─── FIFA Street World Tour Design Tokens ─────────────────────────────────── */
-:root {
-  --street-font:    var(--font-street), "Impact", "Arial Narrow", Arial, sans-serif;
-
-  /* Gold / amber accent palette (replaces orange) */
-  --accent-gold:        #D4A017;
-  --accent-gold-bright: #F5C842;
-  --accent-gold-dim:    #8A6810;
-  --accent-gold-glow:   rgba(212, 160, 23, 0.45);
-
-  /* Keep mode-specific and utility colours */
-  --street-green:   #00C864;
-  --xbox-green:     #107C10;
-  --street-red:     #E61C1C;
-  --street-blue:    #3B82F6;
-
-  /* Panel styling */
-  --street-panel-bg:  rgba(5, 5, 9, 0.95);
-  --panel-border:     rgba(212, 160, 23, 0.35);
-  --panel-header-bg:  rgba(212, 160, 23, 0.08);
-}
-
 /* ─── Juggling animation keyframes ─────────────────────────────────────────── */
 @keyframes ballJuggle {
   0%   { transform: translate(0px, 0px) rotate(0deg); }
@@ -106,6 +104,82 @@ main {
   28%  { transform: rotate(-3.5deg); }
   58%  { transform: rotate(1.5deg); }
   100% { transform: rotate(0deg); }
+}
+
+/* ─── Waveform bars animation (MusicPlayer) ─────────────────────────────────── */
+@keyframes waveBar1 { 0%, 100% { height: 6px  } 50% { height: 18px } }
+@keyframes waveBar2 { 0%, 100% { height: 14px } 50% { height: 5px  } }
+@keyframes waveBar3 { 0%, 100% { height: 8px  } 50% { height: 20px } }
+@keyframes waveBar4 { 0%, 100% { height: 16px } 50% { height: 7px  } }
+@keyframes waveBar5 { 0%, 100% { height: 10px } 50% { height: 22px } }
+
+.waveform-bar   { animation-duration: 0.8s; animation-timing-function: ease-in-out; animation-iteration-count: infinite; }
+.waveform-bar-1 { animation-name: waveBar1; animation-delay: 0s;     }
+.waveform-bar-2 { animation-name: waveBar2; animation-delay: 0.12s;  }
+.waveform-bar-3 { animation-name: waveBar3; animation-delay: 0.24s;  }
+.waveform-bar-4 { animation-name: waveBar4; animation-delay: 0.08s;  }
+.waveform-bar-5 { animation-name: waveBar5; animation-delay: 0.18s;  }
+
+/* ─── Google Translate widget overrides ─────────────────────────────────────── */
+/*
+ * The Google Translate widget injects a <select> and surrounding markup.
+ * These overrides restyle it to match the dark FIFA Street aesthetic.
+ */
+#google_translate_element {
+  position: fixed;
+  top: 18px;
+  right: 20px;
+  z-index: 20;
+}
+
+/* Hide the "Powered by Google" logo and attribution */
+.goog-logo-link,
+.goog-te-gadget span {
+  display: none !important;
+}
+
+/* Container */
+.goog-te-gadget {
+  font-size: 0 !important;
+}
+
+/* The select dropdown */
+.goog-te-combo {
+  background: rgba(5, 5, 9, 0.92) !important;
+  border: 1px solid rgba(212, 160, 23, 0.4) !important;
+  color: var(--accent-gold) !important;
+  font-family: var(--street-font), sans-serif !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  font-style: italic !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.12em !important;
+  padding: 6px 10px !important;
+  cursor: pointer !important;
+  outline: none !important;
+  border-radius: 0 !important;
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 22px !important;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23D4A017' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E") !important;
+  background-repeat: no-repeat !important;
+  background-position: right 6px center !important;
+}
+
+.goog-te-combo:hover {
+  border-color: var(--accent-gold) !important;
+  background-color: rgba(212, 160, 23, 0.08) !important;
+}
+
+/* Hide the top bar Google Translate inserts at the top of the page */
+.goog-te-banner-frame,
+#goog-gt-tt,
+.goog-te-balloon-frame {
+  display: none !important;
+}
+
+body {
+  top: 0 !important;
 }
 
 /* SVG animation classes */
