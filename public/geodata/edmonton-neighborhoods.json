@@ -1,0 +1,83 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "id": "downtown",
+      "properties": { "name": "Downtown Edmonton", "cityId": "commonwealth-stadium" },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [-113.5150, 53.5380], [-113.4820, 53.5380],
+          [-113.4820, 53.5510], [-113.5150, 53.5510],
+          [-113.5150, 53.5380]
+        ]]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "oliver",
+      "properties": { "name": "Oliver", "cityId": "commonwealth-stadium" },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [-113.5310, 53.5390], [-113.5150, 53.5390],
+          [-113.5150, 53.5510], [-113.5310, 53.5510],
+          [-113.5310, 53.5390]
+        ]]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "glenora",
+      "properties": { "name": "Glenora / Westmount", "cityId": "commonwealth-stadium" },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [-113.5480, 53.5400], [-113.5310, 53.5400],
+          [-113.5310, 53.5570], [-113.5480, 53.5570],
+          [-113.5480, 53.5400]
+        ]]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "strathcona",
+      "properties": { "name": "Strathcona / Whyte Ave", "cityId": "commonwealth-stadium" },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [-113.5200, 53.5150], [-113.4900, 53.5150],
+          [-113.4900, 53.5290], [-113.5200, 53.5290],
+          [-113.5200, 53.5150]
+        ]]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "university",
+      "properties": { "name": "University / Garneau", "cityId": "commonwealth-stadium" },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [-113.5250, 53.5100], [-113.5050, 53.5100],
+          [-113.5050, 53.5240], [-113.5250, 53.5240],
+          [-113.5250, 53.5100]
+        ]]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "mccauley",
+      "properties": { "name": "McCauley / Boyle Street", "cityId": "commonwealth-stadium" },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [-113.4930, 53.5480], [-113.4720, 53.5480],
+          [-113.4720, 53.5590], [-113.4930, 53.5590],
+          [-113.4930, 53.5480]
+        ]]
+      }
+    }
+  ]
+}

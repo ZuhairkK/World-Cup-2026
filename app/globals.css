@@ -1,5 +1,16 @@
 @import "tailwindcss";
 
+/* ─── Custom Font ─────────────────────────────────────────────────────────────
+ *  public/EASPORTS15.ttf  — global typeface for all text
+ * ─────────────────────────────────────────────────────────────────────────── */
+@font-face {
+  font-family: "EASports";
+  src: url("/EASPORTS15.ttf") format("truetype");
+  font-weight: 100 900;
+  font-style:  normal italic;
+  font-display: swap;
+}
+
 /* ─── Design Tokens ─────────────────────────────────────────────────────────── */
 :root {
   /* Dark sports-broadcast base */
@@ -26,8 +37,16 @@
   /* Transition timing */
   --ease-out-expo:  cubic-bezier(0.16, 1, 0.3, 1);
 
-  /* ─── FIFA Street World Tour ──────────────────────────────────────────────── */
-  --street-font:    var(--font-street), "Impact", "Arial Narrow", Arial, sans-serif;
+  /* ─── Font variables — all map to EASports (EASPORTS15.ttf) ─────────────── */
+  --font-display:    "EASports";
+  --font-body:       "EASports";
+  --font-street:     "EASports";
+  --font-geist-sans: "EASports";
+  --font-geist-mono: "EASports";
+
+  /* ─── Project-wide font stacks ───────────────────────────────────────────── */
+  --street-font: "EASports", sans-serif;
+  --body-font:   "EASports", sans-serif;
 
   /* Gold / amber accent palette (replaces orange) */
   --accent-gold:        #D4A017;
@@ -63,7 +82,7 @@ body {
   overflow: hidden;
   background: var(--bg-base);
   color: var(--text-primary);
-  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+  font-family: "EASports", sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 

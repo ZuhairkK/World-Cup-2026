@@ -10,6 +10,7 @@
     "fetch-routes": "npx ts-node --project tsconfig.json scripts/fetch-routes.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.78.0",
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.5.0",
     "@types/mapbox-gl": "^3.4.1",

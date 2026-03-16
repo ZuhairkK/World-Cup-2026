@@ -243,7 +243,7 @@ export default function AnchorCarousel({
                   borderLeft: `3px solid ${isSelected ? "var(--accent-gold)" : tierColor}`,
                 }}
               >
-                {/* Hotel name + tier badge */}
+                {/* Hotel name + tier badge + transit score */}
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 3 }}>
                   <span
                     style={{
@@ -253,23 +253,41 @@ export default function AnchorCarousel({
                       fontStyle: "italic",
                       color: isSelected ? "var(--accent-gold)" : "white",
                       letterSpacing: "0.03em",
+                      flex: 1,
+                      minWidth: 0,
                     }}
                   >
                     {hotel.name}
                   </span>
-                  <span
-                    style={{
-                      fontFamily: "var(--street-font)",
-                      fontSize: 8,
-                      fontWeight: 700,
-                      letterSpacing: "0.12em",
-                      color: tierColor,
-                      border: `1px solid ${tierColor}`,
-                      padding: "1px 4px",
-                    }}
-                  >
-                    {TIER_LABELS[hotel.tier]}
-                  </span>
+                  <div style={{ display: "flex", gap: 4, alignItems: "center", flexShrink: 0 }}>
+                    {/* Transit score badge */}
+                    <span
+                      style={{
+                        fontFamily: "var(--font-geist-mono)",
+                        fontSize: 8,
+                        fontWeight: 700,
+                        color: hotel.transitScore >= 8 ? "#4ade80" : hotel.transitScore >= 6 ? "var(--accent-gold)" : "#f87171",
+                        border: `1px solid currentColor`,
+                        padding: "1px 4px",
+                      }}
+                      title="Transit access score"
+                    >
+                      🚇 {hotel.transitScore}/10
+                    </span>
+                    <span
+                      style={{
+                        fontFamily: "var(--street-font)",
+                        fontSize: 8,
+                        fontWeight: 700,
+                        letterSpacing: "0.12em",
+                        color: tierColor,
+                        border: `1px solid ${tierColor}`,
+                        padding: "1px 4px",
+                      }}
+                    >
+                      {TIER_LABELS[hotel.tier]}
+                    </span>
+                  </div>
                 </div>
 
                 {/* Price range */}
@@ -284,15 +302,16 @@ export default function AnchorCarousel({
                   {hotel.priceRange}
                 </div>
 
-                {/* Efficiency insight */}
+                {/* Transit note — nearest stop, line, transfers */}
                 <div
                   style={{
                     fontFamily: "var(--font-geist-sans)",
                     fontSize: 10,
                     color: "rgba(255,255,255,0.4)",
+                    lineHeight: 1.4,
                   }}
                 >
-                  {hotel.efficiency}
+                  {hotel.transitNote}
                 </div>
               </button>
             );
@@ -313,7 +332,7 @@ export default function AnchorCarousel({
             alignItems: "center",
           }}
         >
-          <div>
+          <div style={{ flex: 1, minWidth: 0 }}>
             <div
               style={{
                 fontFamily: "var(--street-font)",
@@ -326,8 +345,8 @@ export default function AnchorCarousel({
             >
               {selectedHotel.name}
             </div>
-            <div style={{ fontFamily: "var(--font-geist-sans)", fontSize: 10, color: "rgba(255,255,255,0.4)" }}>
-              {selectedHotel.efficiency}
+            <div style={{ fontFamily: "var(--font-geist-sans)", fontSize: 9, color: "rgba(255,255,255,0.4)", lineHeight: 1.4, marginTop: 2 }}>
+              {selectedHotel.transitNote}
             </div>
           </div>
           <span

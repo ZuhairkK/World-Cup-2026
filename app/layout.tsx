@@ -1,29 +1,18 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono, Barlow_Condensed } from "next/font/google";
+import localFont from "next/font/local";
 import Script from "next/script";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
-
-const barlowCondensed = Barlow_Condensed({
-  variable: "--font-street",
-  subsets: ["latin"],
-  weight: ["400", "600", "700", "800", "900"],
-  style: ["normal", "italic"],
+const eaSports = localFont({
+  src: "../public/EASPORTS15.ttf",
+  variable: "--font-ea",
+  display: "swap",
 });
 
 export const metadata: Metadata = {
-  title: "FIFA World Cup 2026 — Canada Transit Guide",
+  title: "FIFA World Cup 2026 — Canada Fan Guide",
   description:
-    "Explore transportation accessibility for all 2026 FIFA World Cup stadiums in Canada. Compare transit, cycling, walking, and driving times from key city anchors.",
+    "Your ultimate fan guide to the 2026 FIFA World Cup in Canada. Explore stadiums, transportation, hidden gems, and iconic FIFA soundtracks across Vancouver, Edmonton, and Toronto.",
 };
 
 export default function RootLayout({
@@ -33,7 +22,7 @@ export default function RootLayout({
     <html lang="en">
       <body
         translate="yes"
-        className={`${geistSans.variable} ${geistMono.variable} ${barlowCondensed.variable}`}
+        className={`${eaSports.variable}`}
       >
         {children}
 

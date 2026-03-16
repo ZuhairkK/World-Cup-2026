@@ -229,7 +229,7 @@ export default function MusicPlayer() {
                   backgroundImage: `url('${edition.footballerImage}')`,
                   backgroundSize: "cover",
                   backgroundPosition: "center top",
-                  filter: "blur(22px) brightness(0.65) saturate(1.2)",
+                  filter: "blur(12px) brightness(0.8) saturate(1.3)",
                   transform: "scale(1.12)", // prevent blurred edges showing
                 }
               : {
@@ -239,14 +239,14 @@ export default function MusicPlayer() {
           }}
         />
 
-        {/* White frosted glass overlay */}
+        {/* White frosted glass overlay — 55% opacity so footballer shows through */}
         <div
           style={{
             position: "absolute",
             inset: 0,
-            background: "rgba(255,255,255,0.72)",
-            backdropFilter: "blur(12px)",
-            WebkitBackdropFilter: "blur(12px)",
+            background: "rgba(255,255,255,0.55)",
+            backdropFilter: "blur(8px)",
+            WebkitBackdropFilter: "blur(8px)",
           }}
         />
 
@@ -526,7 +526,7 @@ export default function MusicPlayer() {
         <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
           {edition.tracks.map((track, i) => (
             <div
-              key={i}
+              key={track}
               style={{
                 fontSize: 12,
                 color:

@@ -21,7 +21,7 @@ import * as dotenv from "dotenv";
 dotenv.config({ path: path.join(__dirname, "../.env.local") });
 
 import { STADIUMS } from "../data/stadiums";
-import type { Mode, RouteCache, RouteResult } from "../data/types";
+import type { Mode, RouteCache, RouteResult, TransitStep } from "../data/types";
 
 const API_KEY = process.env.GOOGLE_MAPS_API_KEY;
 if (!API_KEY) {
@@ -29,24 +29,112 @@ if (!API_KEY) {
   process.exit(1);
 }
 
+// Exclude "shuttle" — those routes come from data/shuttles.ts, not the API
 const MODES: Mode[] = ["transit", "cycling", "walking", "driving"];
 
-/** Maps our Mode type to Google Maps travelMode string */
-const GMAPS_MODE: Record<Mode, string> = {
+/** Maps routed modes to Google Maps travelMode string (shuttle is excluded) */
+const GMAPS_MODE: Record<Exclude<Mode, "shuttle">, string> = {
   transit:  "TRANSIT",
   cycling:  "BICYCLE",
   walking:  "WALK",
   driving:  "DRIVE",
 };
 
+/** Google Routes API v2 transit step detail */
+interface GMapsTransitDetails {
+  transitLine?: {
+    name?: string;
+    vehicle?: { type?: string };
+  };
+  stopCount?: number;
+}
+
+/** A single step in a Google Routes API leg */
+interface GMapsStep {
+  travelMode?: string;           // "WALK" | "TRANSIT" | "BICYCLE"
+  staticDuration?: string;       // e.g. "240s"
+  transitDetails?: GMapsTransitDetails;
+}
+
+interface GMapsLeg {
+  steps?: GMapsStep[];
+}
+
 interface GMapsRoute {
-  duration: string; // e.g. "1605s"
+  duration: string;              // e.g. "1605s"
   distanceMeters: number;
   polyline?: { encodedPolyline: string };
+  legs?: GMapsLeg[];
 }
 
 interface GMapsResponse {
   routes?: GMapsRoute[];
+}
+
+/**
+ * Maps a Google transit vehicle type string to our TransitStep mode.
+ * Covers common GTFS vehicle types returned by the Routes API.
+ */
+function parseVehicleType(type?: string): TransitStep["mode"] {
+  switch ((type ?? "").toUpperCase()) {
+    case "BUS":
+    case "INTERCITY_BUS":
+    case "TROLLEYBUS":
+      return "bus";
+    case "SUBWAY":
+    case "METRO_RAIL":
+    case "HEAVY_RAIL":
+      return "subway";
+    case "TRAM":
+    case "LIGHT_RAIL":
+    case "MONORAIL":
+    case "FUNICULAR":
+      return "tram";
+    case "COMMUTER_TRAIN":
+    case "HIGH_SPEED_TRAIN":
+    case "LONG_DISTANCE_TRAIN":
+    case "RAIL":
+      return "rail";
+    case "FERRY":
+      return "ferry";
+    default:
+      return "bus";
+  }
+}
+
+/**
+ * Parses Google Routes API legs into our compact TransitStep array.
+ * Walks are collapsed if under 1 minute; consecutive walks are merged.
+ */
+function parseTransitSteps(legs: GMapsLeg[]): TransitStep[] {
+  const steps: TransitStep[] = [];
+
+  for (const leg of legs) {
+    for (const step of leg.steps ?? []) {
+      const durMin = step.staticDuration
+        ? Math.round(parseInt(step.staticDuration, 10) / 60)
+        : 0;
+
+      if (step.travelMode === "TRANSIT" && step.transitDetails) {
+        steps.push({
+          mode: parseVehicleType(step.transitDetails.transitLine?.vehicle?.type),
+          line: step.transitDetails.transitLine?.name,
+          stops: step.transitDetails.stopCount,
+          durationMin: durMin,
+        });
+      } else if (step.travelMode === "WALK" && durMin >= 1) {
+        // Merge consecutive walk steps
+        const last = steps[steps.length - 1];
+        if (last?.mode === "walk") {
+          last.durationMin += durMin;
+        } else {
+          steps.push({ mode: "walk", durationMin: durMin });
+        }
+      }
+    }
+  }
+
+  return steps;
 }
 
 /**
@@ -96,8 +184,13 @@ async function fetchRoute(
   originLng: number,
   destLat: number,
   destLng: number,
-  mode: Mode
-): Promise<{ durationMin: number; distanceKm: number; geometry: GeoJSON.LineString | null } | null> {
+  mode: Exclude<Mode, "shuttle">
+): Promise<{
+  durationMin: number;
+  distanceKm: number;
+  geometry: GeoJSON.LineString | null;
+  transitSteps?: TransitStep[];
+} | null> {
   const url = "https://routes.googleapis.com/directions/v2:computeRoutes";
 
   const body = {
@@ -109,13 +202,18 @@ async function fetchRoute(
     polylineQuality: "OVERVIEW",
   };
 
+  // Request transit leg details only for transit mode
+  const transitFieldMask =
+    mode === "transit"
+      ? ",routes.legs.steps.travelMode,routes.legs.steps.staticDuration,routes.legs.steps.transitDetails"
+      : "";
+
   const res = await fetch(url, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       "X-Goog-Api-Key": API_KEY!,
-      "X-Goog-FieldMask":
-        "routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline",
+      "X-Goog-FieldMask": `routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline${transitFieldMask}`,
     },
     body: JSON.stringify(body),
   });
@@ -139,7 +237,12 @@ async function fetchRoute(
     ? decodePolyline(route.polyline.encodedPolyline)
     : null;
 
-  return { durationMin, distanceKm, geometry };
+  const transitSteps =
+    mode === "transit" && route.legs
+      ? parseTransitSteps(route.legs)
+      : undefined;
+
+  return { durationMin, distanceKm, geometry, transitSteps };
 }
 
 async function main() {
@@ -160,7 +263,7 @@ async function main() {
           anchor.coords.lng,
           stadium.coords.lat,
           stadium.coords.lng,
-          mode
+          mode as Exclude<Mode, "shuttle">
         );
 
         if (result) {
@@ -171,6 +274,7 @@ async function main() {
             durationMin: result.durationMin,
             distanceKm: result.distanceKm,
             geometry: result.geometry,
+            ...(result.transitSteps ? { transitSteps: result.transitSteps } : {}),
           };
           cache[key] = entry;
           console.log(`✅  ${result.durationMin} min, ${result.distanceKm} km`);

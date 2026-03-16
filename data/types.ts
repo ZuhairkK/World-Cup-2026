@@ -1,7 +1,7 @@
 // ─── Core domain types ────────────────────────────────────────────────────────
 
 /** Travel mode supported by the routing pipeline */
-export type Mode = "transit" | "cycling" | "walking" | "driving";
+export type Mode = "transit" | "cycling" | "walking" | "driving" | "shuttle";
 
 /** A lat/lng coordinate pair */
 export interface Coords {
@@ -31,6 +31,10 @@ export interface Hotel {
   priceRange: string;             // e.g. "$120–$200 / night"
   distanceToStadiumKm: number;   // straight-line km
   efficiency: string;             // human-readable insight, e.g. "5 min walk · Best value"
+  /** 0–10 transit access score — used for sorting and display */
+  transitScore: number;
+  /** Specific transit info: nearest stop, line, transfers to stadium */
+  transitNote: string;
 }
 
 // ─── Hidden Gem types ─────────────────────────────────────────────────────────
@@ -62,6 +66,21 @@ export interface Stadium {
 
 // ─── Pre-computed route types ─────────────────────────────────────────────────
 
+/**
+ * A single step within a transit route — bus line, subway leg, or walk segment.
+ * Only populated for mode="transit".
+ */
+export interface TransitStep {
+  /** The vehicle type for this step */
+  mode: "walk" | "bus" | "subway" | "tram" | "rail" | "ferry";
+  /** Transit line name — e.g. "Canada Line", "504 King", "Capital Line" */
+  line?: string;
+  /** Number of stops on this transit leg */
+  stops?: number;
+  /** Duration of this individual step in minutes */
+  durationMin: number;
+}
+
 /** A single leg of a pre-computed route */
 export interface RouteResult {
   stadiumId: string;
@@ -71,6 +90,12 @@ export interface RouteResult {
   distanceKm: number;       // Distance in kilometres
   /** GeoJSON LineString geometry for drawing the polyline on Mapbox */
   geometry: GeoJSON.LineString | null;
+  /**
+   * Step-by-step breakdown for transit mode.
+   * e.g. [walk 4 min → Canada Line 12 stops → walk 2 min]
+   * Populated by fetch-routes.ts when mode="transit".
+   */
+  transitSteps?: TransitStep[];
 }
 
 /**

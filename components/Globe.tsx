@@ -14,6 +14,9 @@
  * - The zoom-in is a manual camera lerp inside useFrame; once the camera
  *   reaches a threshold distance we fire the callback.
  * - Stars are a simple Points mesh for depth/atmosphere.
+ * - Flag compositing: each country's flag PNG is drawn onto an offscreen
+ *   canvas at the correct equirectangular UV position, then handed to Three.js
+ *   as a CanvasTexture. No shaders or DecalGeometry needed.
  */
 
 import { useRef, useState, useCallback, useEffect } from "react";
@@ -23,9 +26,69 @@ import * as THREE from "three";
 
 import { STADIUMS } from "@/data/stadiums";
 import type { Stadium } from "@/data/types";
-import JugglingAnimation from "@/components/JugglingAnimation";
 import NintendoSwitch from "@/components/NintendoSwitch";
 
+// ─── Globe radius constant ────────────────────────────────────────────────────
+const GLOBE_RADIUS = 2;
+
+// ─── Soccer ball panel seeds — spherical Voronoi layout ──────────────────────
+//
+// 21 seed points arranged in 5 concentric rings on the sphere surface.
+// The spherical Voronoi diagram of these seeds produces large, organically
+// curved panels that look like the inflated panels of a real match ball.
+//
+// Ring structure (1 + 5 + 5 + 5 + 5 = 21):
+//   Polar cap  — 1 panel  at the north pole
+//   Upper ring — 5 panels at lat ≈ +52°, every 72° longitude
+//   Mid-upper  — 5 panels at lat ≈ +16°, every 72°, offset +36°
+//   Mid-lower  — 5 panels at lat ≈ -16°, every 72°, offset  0°
+//   Lower ring — 5 panels at lat ≈ -52°, every 72°, offset +36°
+//
+// Flags are chosen for maximum colour variety and visual contrast so the ball
+// looks vibrant from every angle.
+const PANEL_SEEDS: ReadonlyArray<{ code: string; lat: number; lng: number }> = [
+  // ── Polar cap ──────────────────────────────────────────────────────────────
+  { code: "ca", lat:  80, lng:    0 },   // Canada — red/white
+
+  // ── Upper ring (lat +52°, 0 72 144 −144 −72) ──────────────────────────────
+  { code: "no", lat:  52, lng:    0 },   // Norway — Nordic cross
+  { code: "de", lat:  52, lng:   72 },   // Germany — bold tricolour
+  { code: "jp", lat:  52, lng:  144 },   // Japan — red circle
+  { code: "kr", lat:  52, lng: -144 },   // South Korea — taegukgi
+  { code: "gb", lat:  52, lng:  -72 },   // England — Union Jack
+
+  // ── Mid-upper ring (lat +16°, 36 108 180 −108 −36) ────────────────────────
+  { code: "us", lat:  16, lng:   36 },   // USA — stars & stripes
+  { code: "ir", lat:  16, lng:  108 },   // Iran — green/white/red
+  { code: "au", lat:  16, lng:  180 },   // Australia — Southern Cross
+  { code: "fr", lat:  16, lng: -108 },   // France — tricolour
+  { code: "ma", lat:  16, lng:  -36 },   // Morocco — red/green star
+
+  // ── Mid-lower ring (lat −16°, 0 72 144 −144 −72) ──────────────────────────
+  { code: "eg", lat: -16, lng:    0 },   // Egypt — red/white/black eagle
+  { code: "sa", lat: -16, lng:   72 },   // Saudi Arabia — all-green
+  { code: "nz", lat: -16, lng:  144 },   // New Zealand — Southern Cross
+  { code: "sn", lat: -16, lng: -144 },   // Senegal — green/yellow/red
+  { code: "mx", lat: -16, lng:  -72 },   // Mexico — eagle crest
+
+  // ── Lower ring (lat −52°, 36 108 180 −108 −36) ────────────────────────────
+  { code: "co", lat: -52, lng:   36 },   // Colombia — yellow/blue/red
+  { code: "pt", lat: -52, lng:  108 },   // Portugal — green/red
+  { code: "br", lat: -52, lng:  180 },   // Brazil — green/yellow/blue
+  { code: "ar", lat: -52, lng: -108 },   // Argentina — sky-blue/white
+  { code: "za", lat: -52, lng:  -36 },   // South Africa — rainbow
+] as const;
+
+// ─── Utility: load an HTMLImageElement via Promise ────────────────────────────
+// No crossOrigin needed — all assets are same-origin (public/).
+function loadImage(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload  = () => resolve(img);
+    img.onerror = () => reject(new Error(`[Globe] Could not load: ${src}`));
+    img.src = src;
+  });
+}
 
 // ─── Utility: convert lat/lng to a 3D point on a unit sphere ─────────────────
 function latLngToVec3(lat: number, lng: number, radius: number): THREE.Vector3 {
@@ -37,9 +100,6 @@ function latLngToVec3(lat: number, lng: number, radius: number): THREE.Vector3 {
      radius * Math.sin(phi) * Math.sin(theta)
   );
 }
-
-// ─── Globe radius constant ────────────────────────────────────────────────────
-const GLOBE_RADIUS = 2;
 
 // ─── Stadium marker mesh ──────────────────────────────────────────────────────
 interface MarkerProps {
@@ -155,42 +215,150 @@ function CameraZoom({ target, onZoomComplete }: CameraZoomProps) {
   return null;
 }
 
-// ─── Earth sphere ─────────────────────────────────────────────────────────────
-// Attempts to load /earth-texture.jpg from the public folder.
-// If missing, falls back to an ocean-blue material.
-// → To enable the texture: drop any equirectangular earth map into
-//   public/earth-texture.jpg (free NASA Blue Marble images work great).
+// ─── Earth sphere — soccer ball flag panels via spherical Voronoi ─────────────
+//
+// Flow:
+//  1. Load all 21 flag PNGs in parallel
+//  2. Compute a spherical Voronoi diagram: for every texel find the nearest
+//     seed point (max dot-product on the unit sphere → closest great-circle
+//     distance). Each texel is labelled with its panel index.
+//  3. Paint each panel: draw the flag centred at the seed UV, large enough to
+//     blanket the whole cell, then copy only that cell's labelled texels.
+//  4. Groove pass: a two-pass Chebyshev distance transform locates every texel
+//     within GROOVE_R pixels of a panel boundary; a cosine ramp darkens those
+//     texels to simulate the deep inset groove on a real match ball.
+//  5. A faint 1–2 px bright highlight just outside the groove adds the subtle
+//     "raised panel" rim visible on the reference image.
+//  6. Hand the CanvasTexture to Three.js. meshStandardMaterial with the scene
+//     lighting gives the ball its inflated 3-D shading automatically.
 function EarthSphere() {
-  const [texture, setTexture] = useState<THREE.Texture | null>(null);
+  const matRef = useRef<THREE.MeshStandardMaterial>(null);
 
   useEffect(() => {
-    const loader = new THREE.TextureLoader();
-    loader.load(
-      "/earth-texture.jpg",
-      (tex) => setTexture(tex),
-      undefined,
-      () => {} // silently skip if file isn't there
-    );
+    let cancelled = false;
+
+    async function buildTexture() {
+      const W = 2048, H = 1024;
+      const canvas = document.createElement("canvas");
+      canvas.width  = W;
+      canvas.height = H;
+      const ctx = canvas.getContext("2d")!;
+
+      // ── 1. Neutral base (only visible if a flag fails to load) ───────────────
+      ctx.fillStyle = "#888";
+      ctx.fillRect(0, 0, W, H);
+
+      // ── 2. Load all flag PNGs in parallel ─────────────────────────────────
+      const flagResults = await Promise.allSettled(
+        PANEL_SEEDS.map(s => loadImage(`/flags/${s.code}.png`))
+      );
+      if (cancelled) return;
+
+      // ── 3. Seed → pre-computed 3-D unit vectors ────────────────────────────
+      const N = PANEL_SEEDS.length;
+      const seedVec = PANEL_SEEDS.map(({ lat, lng }) => {
+        const phi   = (90 - lat) * (Math.PI / 180);
+        const theta = (lng + 180) * (Math.PI / 180);
+        return [
+          -Math.sin(phi) * Math.cos(theta),
+           Math.cos(phi),
+           Math.sin(phi) * Math.sin(theta),
+        ] as [number, number, number];
+      });
+
+      // ── 4. Spherical Voronoi — O(W × H × N) ───────────────────────────────
+      //    For each texel convert UV → unit sphere, find max dot-product seed.
+      const voronoi = new Uint8Array(W * H);
+      for (let y = 0; y < H; y++) {
+        const phi    = (y / H) * Math.PI;           // 0 (N pole) → π (S pole)
+        const sinPhi = Math.sin(phi);
+        const cosPhi = Math.cos(phi);
+        const row    = y * W;
+        for (let x = 0; x < W; x++) {
+          const theta = (x / W) * 2 * Math.PI;      // 0 → 2π
+          const px = -sinPhi * Math.cos(theta);
+          const py =  cosPhi;
+          const pz =  sinPhi * Math.sin(theta);
+          let best = 0, bestDot = -2;
+          for (let c = 0; c < N; c++) {
+            const v = seedVec[c];
+            const d = px * v[0] + py * v[1] + pz * v[2];
+            if (d > bestDot) { bestDot = d; best = c; }
+          }
+          voronoi[row + x] = best;
+        }
+      }
+      if (cancelled) return;
+
+      // ── 5. Paint flags into Voronoi cells ─────────────────────────────────
+      //    Off-white seam colour pre-fills mainData; each flag overwrites only
+      //    its own cell's texels.
+      const mainData = new Uint8ClampedArray(W * H * 4);
+      // Alpha fully opaque everywhere; RGB filled by flags below
+      for (let i = 3; i < mainData.length; i += 4) mainData[i] = 255;
+
+      for (let c = 0; c < N; c++) {
+        const res = flagResults[c];
+        if (res.status !== "fulfilled") continue;
+        const img = res.value;
+
+        // Seed UV centre
+        const cx = Math.round(((PANEL_SEEDS[c].lng + 180) / 360) * W);
+        const cy = Math.round(((90 - PANEL_SEEDS[c].lat) / 180) * H);
+
+        // Flag drawn large enough (30 % of canvas width) to blanket any cell
+        const fw = Math.round(W * 0.30);
+        const fh = Math.round(fw * img.naturalHeight / img.naturalWidth);
+
+        // Off-screen canvas for this flag (full W×H so pixel indices match)
+        const tmp  = document.createElement("canvas");
+        tmp.width  = W; tmp.height = H;
+        const tc   = tmp.getContext("2d")!;
+        // Draw three times to handle horizontal wrap at ±180°
+        for (const ox of [-W, 0, W]) {
+          tc.drawImage(img, cx - fw / 2 + ox, cy - fh / 2, fw, fh);
+        }
+        const fd = tc.getImageData(0, 0, W, H).data;
+
+        for (let i = 0; i < W * H; i++) {
+          if (voronoi[i] === c) {
+            const p = i * 4;
+            mainData[p]   = fd[p];
+            mainData[p+1] = fd[p+1];
+            mainData[p+2] = fd[p+2];
+          }
+        }
+      }
+
+      ctx.putImageData(new ImageData(mainData, W, H), 0, 0);
+      if (cancelled || !matRef.current) return;
+
+      // ── 7. Push to Three.js ────────────────────────────────────────────────
+      const tex = new THREE.CanvasTexture(canvas);
+      tex.colorSpace  = THREE.SRGBColorSpace;
+      tex.needsUpdate = true;
+      matRef.current.map = tex;
+      matRef.current.color.set(0xffffff);
+      matRef.current.needsUpdate = true;
+    }
+
+    buildTexture();
+    return () => { cancelled = true; };
   }, []);
 
   return (
     <Sphere args={[GLOBE_RADIUS, 64, 64]}>
-      {texture ? (
-        <meshStandardMaterial map={texture} roughness={0.7} metalness={0.0} />
-      ) : (
-        <meshStandardMaterial
-          color="#1565c0"
-          roughness={0.75}
-          metalness={0.05}
-        />
-      )}
+      {/*
+        meshStandardMaterial so the directional + point lights in <Scene>
+        produce the shading that makes the panels look inflated/3-D.
+        Off-white colour shows while the async texture builds.
+      */}
+      <meshStandardMaterial ref={matRef} color="#888888" roughness={0.55} metalness={0.0} />
     </Sphere>
   );
 }
 
 // ─── Continent outline overlay (subtle wireframe) ─────────────────────────────
-// Green tint gives a land-mass suggestion even without a real texture.
-// Opacity is low enough to blend with both the colour fallback and a real texture.
 function GlobeWireframe() {
   return (
     <Sphere args={[GLOBE_RADIUS + 0.002, 48, 48]}>
@@ -229,10 +397,10 @@ interface SceneProps {
 function Scene({ zoomTarget, onZoomComplete, onStadiumSelect, isZooming }: SceneProps) {
   return (
     <>
-      {/* Lighting — sunlight from upper-right, soft fill from the left */}
-      <ambientLight intensity={0.35} />
+      {/* Lighting — boosted ambient so dark textures stay visible */}
+      <ambientLight intensity={1.2} />
       <directionalLight position={[8, 4, 5]} intensity={1.5} color="#fff8e8" />
-      <pointLight position={[-6, -3, -6]} intensity={0.25} color="#1a4a9a" />
+      <pointLight position={[-6, -3, -6]} intensity={0.4} color="#1a4a9a" />
 
       {/* Stars backdrop */}
       <Stars radius={80} depth={50} count={4000} factor={3} fade speed={0.6} />
@@ -271,19 +439,14 @@ function Scene({ zoomTarget, onZoomComplete, onStadiumSelect, isZooming }: Scene
   );
 }
 
-// ─── Globe title overlay — exact FIFA Street "Canada Transport Guide" match ───
-//
-// Reference: fifa_street_canada_transport_landing.png
-//   • "CANADA" in huge bold yellow at the very top, centered
-//   • "TRANSPORT GUIDE" in medium yellow directly below
-//   • City names row: VANCOUVER · EDMONTON · TORONTO in small white italic
+
+// ─── Globe title overlay ──────────────────────────────────────────────────────
 function GlobeTitle() {
   return (
     <div
       className="pointer-events-none absolute left-1/2 top-8 -translate-x-1/2 text-center"
       style={{ whiteSpace: "nowrap" }}
     >
-      {/* "CANADA" — dominant yellow headline */}
       <h1
         style={{
           fontFamily: "var(--street-font)",
@@ -302,10 +465,9 @@ function GlobeTitle() {
           marginBottom: 4,
         }}
       >
-        CANADA
+        World Cup
       </h1>
 
-      {/* "TRANSPORT GUIDE" — secondary yellow headline */}
       <p
         style={{
           fontFamily: "var(--street-font)",
@@ -320,10 +482,9 @@ function GlobeTitle() {
           marginBottom: 10,
         }}
       >
-        TRANSPORT GUIDE
+        Fan Guide
       </p>
 
-      {/* City names row — VANCOUVER · EDMONTON · TORONTO */}
       <p
         style={{
           fontFamily: "var(--street-font)",
@@ -336,20 +497,16 @@ function GlobeTitle() {
           textShadow: "0 1px 8px rgba(0,0,0,0.8)",
         }}
       >
-        Vancouver &nbsp;·&nbsp; Edmonton &nbsp;·&nbsp; Toronto
+        Canada Edition
       </p>
     </div>
   );
 }
 
-// ─── Globe label overlay — "CLICK A STADIUM TO EXPLORE" bottom prompt ─────────
-//
-// Reference: bottom-center text with a leading arrow indicator.
-// Also renders a minimal EA/FIFA badge bottom-left.
+// ─── Globe label overlay ──────────────────────────────────────────────────────
 function GlobeLabel() {
   return (
     <>
-      {/* Bottom-center CTA */}
       <div
         className="pointer-events-none absolute bottom-8 left-1/2 -translate-x-1/2 text-center"
         style={{ whiteSpace: "nowrap" }}
@@ -370,38 +527,6 @@ function GlobeLabel() {
         </p>
       </div>
 
-      {/* EA Sports / FIFA Street badge — bottom-left */}
-      <div
-        className="pointer-events-none absolute bottom-7 left-8"
-        style={{ display: "flex", flexDirection: "column", gap: 1 }}
-      >
-        <span
-          style={{
-            fontFamily: "var(--street-font)",
-            fontSize: 9,
-            fontWeight: 900,
-            fontStyle: "italic",
-            textTransform: "uppercase",
-            letterSpacing: "0.18em",
-            color: "rgba(255,255,255,0.3)",
-          }}
-        >
-          EA Sports
-        </span>
-        <span
-          style={{
-            fontFamily: "var(--street-font)",
-            fontSize: 11,
-            fontWeight: 900,
-            fontStyle: "italic",
-            textTransform: "uppercase",
-            letterSpacing: "0.1em",
-            color: "rgba(255,255,255,0.18)",
-          }}
-        >
-          FIFA Street
-        </span>
-      </div>
     </>
   );
 }
@@ -427,32 +552,29 @@ export default function Globe({ onStadiumSelect }: GlobeProps) {
     if (pendingStadiumRef.current) {
       onStadiumSelect(pendingStadiumRef.current);
     }
+    // Reset so the globe is interactive again if the user dismisses the sheet
+    setIsZooming(false);
+    setZoomTarget(null);
   }, [onStadiumSelect]);
 
   return (
     <div className="relative w-full h-full" style={{ background: "var(--bg-base)" }}>
 
-      {/* ── Graffiti background — download (1).jpg (FIFA Street 2012 cover,   ──
-           Messi in front of a graffiti wall) heavily blurred + darkened.
-           Gives the urban street-art texture visible in the reference image.
-           No z-index set → sits at the very back of the stacking context.   */}
+      {/* Graffiti background — blurred + darkened */}
       <div
         aria-hidden="true"
         style={{
           position: "absolute",
           inset: 0,
-          backgroundImage: "url('/download%20(1).jpg')",
+          backgroundImage: "url('/player-messi.jpg')",
           backgroundSize: "cover",
           backgroundPosition: "center",
           filter: "blur(14px) brightness(0.18) saturate(0.7)",
-          transform: "scale(1.06)", // prevent blurred edges showing
+          transform: "scale(1.06)",
         }}
       />
 
-      {/* Juggling video — rendered before canvas, z-index 1 floats above canvas */}
-      <JugglingAnimation layer="background" />
-
-      {/* Canvas with alpha:true so the 3D scene layers cleanly over the video */}
+      {/* R3F canvas */}
       <Canvas
         camera={{ position: [0, 0, 6.5], fov: 45 }}
         gl={{ antialias: true, alpha: true }}
@@ -467,8 +589,7 @@ export default function Globe({ onStadiumSelect }: GlobeProps) {
         />
       </Canvas>
 
-      {/* Nintendo Switch — rendered after Canvas so it's always visible.
-           Low opacity (0.28) + pointer-events none = background decoration. */}
+      {/* Nintendo Switch decoration — right side */}
       <NintendoSwitch />
 
       <GlobeTitle />

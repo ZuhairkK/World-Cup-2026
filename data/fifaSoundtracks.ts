@@ -2,13 +2,12 @@
  * FIFA / EA Sports FC iconic soundtrack editions.
  *
  * Each edition has:
- *  - A YouTube playlist ID (replace placeholders with real IDs)
- *  - A curated list of notable tracks for the tracklist display
+ *  - The shared FIFA soundtracks compilation playlist ID
+ *  - A curated list of verified notable tracks for the tracklist display
  *  - An accent colour used as the gradient cover art background
  *
- * To find the real YouTube playlist ID:
- *   Search "FIFA [year] full soundtrack playlist" on YouTube,
- *   open the playlist, and copy the ID from the URL: ?list=XXXXX
+ * Playlist: https://www.youtube.com/playlist?list=PL7cYcag24D04KK7GD4raNUWnEXQjzqgup
+ * All editions point to the same compilation playlist so music always plays.
  */
 
 export interface FifaEdition {
@@ -16,23 +15,24 @@ export interface FifaEdition {
   year: number;
   title: string;          // Display title, e.g. "FIFA 98" or "EA FC 25"
   subtitle: string;       // Subtitle shown in tracklist panel
-  playlistId: string;     // YouTube playlist ID — replace with real value
+  playlistId: string;     // YouTube playlist ID
   accentColor: string;    // CSS gradient stop colour for cover art
   accentColor2: string;   // Secondary gradient colour
-  tracks: string[];       // 4–6 notable track titles for display
+  tracks: string[];       // 4–6 verified track titles for display
   /**
    * Optional footballer background image for the Apple Music–style player.
-   * Path relative to /public (e.g. "/maxresdefault%20(1).jpg").
+   * Path relative to /public.
    * When absent the player falls back to the accentColor gradient.
    */
   footballerImage?: string;
 }
 
-// Footballer background images — two available, alternated across editions so
-// every card always has a player photo. Inside a quoted CSS url() parentheses
-// are safe; only spaces need %20 encoding.
-const RONALDO = "/maxresdefault%20(1).jpg"; // FIFA Street 2, Ronaldo (Portugal kit)
-const MESSI   = "/download%20(1).jpg";      // FIFA Street 2012 cover, Messi
+// Footballer background images — two available, alternated across editions.
+const RONALDO = "/player-ronaldo.jpg"; // FIFA Street 2, Ronaldo (Portugal kit)
+const MESSI   = "/player-messi.jpg";   // FIFA Street 2012 cover, Messi
+
+// Shared FIFA soundtracks compilation playlist — all editions use this.
+const PLAYLIST_ID = "PL7cYcag24D04KK7GD4raNUWnEXQjzqgup";
 
 export const FIFA_EDITIONS: FifaEdition[] = [
   {
@@ -40,16 +40,16 @@ export const FIFA_EDITIONS: FifaEdition[] = [
     year: 1998,
     title: "FIFA 98",
     subtitle: "Road to World Cup",
-    playlistId: "PLplaceholder_98",
+    playlistId: PLAYLIST_ID,
     accentColor: "#1a237e",
     accentColor2: "#b71c1c",
     footballerImage: RONALDO,
     tracks: [
-      "Chumbawamba — Tubthumping",
       "Blur — Song 2",
-      "New Found Glory — All Downhill From Here",
-      "Semisonic — FNT",
-      "Fatboy Slim — The Rockafeller Skank",
+      "The Crystal Method — Busy Child",
+      "The Crystal Method — Keep Hope Alive",
+      "The Crystal Method — More",
+      "Electric Skychurch — Hugga Bear",
     ],
   },
   {
@@ -57,16 +57,16 @@ export const FIFA_EDITIONS: FifaEdition[] = [
     year: 2002,
     title: "FIFA 2002",
     subtitle: "Road to FIFA World Cup",
-    playlistId: "PLplaceholder_2002",
+    playlistId: PLAYLIST_ID,
     accentColor: "#880e4f",
     accentColor2: "#212121",
     footballerImage: MESSI,
     tracks: [
-      "Oxide & Neutrino — No Good 4 Me",
-      "Basement Jaxx — Where's Your Head At",
-      "White Stripes — Fell in Love with a Girl",
-      "Gorillaz — 5/4",
-      "Queens of the Stone Age — No One Knows",
+      "Gorillaz — 19-2000 (Soulchild Remix)",
+      "DJ Tiësto — Flight 643",
+      "BT — Never Gonna Come Back Down (Hybrid's Echoplex Dub)",
+      "Conjure One — Redemption (Max Graham's Dead Sea Mix)",
+      "Cirrus — Stop and Panic",
     ],
   },
   {
@@ -74,16 +74,16 @@ export const FIFA_EDITIONS: FifaEdition[] = [
     year: 2005,
     title: "FIFA Street",
     subtitle: "World Tour",
-    playlistId: "PLplaceholder_street05",
+    playlistId: PLAYLIST_ID,
     accentColor: "#e65100",
     accentColor2: "#f9a825",
-    footballerImage: RONALDO, // Ronaldo in Portugal kit — matches this era
+    footballerImage: RONALDO,
     tracks: [
-      "N.E.R.D. — Lap of Luxury",
-      "Audioweb — Policeman",
-      "Outkast — The Way You Move",
-      "Spankrock — Bump",
-      "E-40 — Tell Me When To Go",
+      "Dizzee Rascal — Stand Up Tall",
+      "Fatboy Slim — Jin Go Lo Ba",
+      "Artificial Intelligence — Uprising",
+      "Baobinga & I.D. — The Feeling (Special Edit)",
+      "Criminal Mindz — Baptised By Dub",
     ],
   },
   {
@@ -91,16 +91,16 @@ export const FIFA_EDITIONS: FifaEdition[] = [
     year: 2006,
     title: "FIFA 06",
     subtitle: "Official Soundtrack",
-    playlistId: "PLplaceholder_06",
+    playlistId: PLAYLIST_ID,
     accentColor: "#0d47a1",
     accentColor2: "#1b5e20",
     footballerImage: MESSI,
     tracks: [
       "Bloc Party — Helicopter",
-      "The Killers — Somebody Told Me",
-      "Athlete — Wires",
-      "Kaiser Chiefs — I Predict a Riot",
-      "Franz Ferdinand — Do You Want To",
+      "LCD Soundsystem — Daft Punk Is Playing at My House",
+      "Oasis — Lyla",
+      "Jamiroquai — Feels Just Like It Should",
+      "Damian Marley — Welcome to Jamrock",
     ],
   },
   {
@@ -108,16 +108,16 @@ export const FIFA_EDITIONS: FifaEdition[] = [
     year: 2010,
     title: "FIFA 10",
     subtitle: "Official Soundtrack",
-    playlistId: "PLplaceholder_10",
+    playlistId: PLAYLIST_ID,
     accentColor: "#1b5e20",
     accentColor2: "#212121",
     footballerImage: RONALDO,
     tracks: [
-      "Dizzee Rascal — Bonkers",
-      "Empire of the Sun — Walking on a Dream",
-      "Them Crooked Vultures — New Fang",
-      "Gorillaz — Stylo",
-      "Vampire Weekend — Cousins",
+      "Metric — Gold Guns Girls",
+      "Major Lazer ft. Mr. Lexx & Santigold — Hold the Line",
+      "Passion Pit — Moth's Wings",
+      "Peter Bjorn and John — Nothing to Worry About",
+      "Matt & Kim — Daylight",
     ],
   },
   {
@@ -125,16 +125,16 @@ export const FIFA_EDITIONS: FifaEdition[] = [
     year: 2014,
     title: "FIFA 14",
     subtitle: "Official Soundtrack",
-    playlistId: "PLplaceholder_14",
+    playlistId: PLAYLIST_ID,
     accentColor: "#4a148c",
     accentColor2: "#b71c1c",
-    footballerImage: MESSI, // Messi peak era — FIFA Street 2012 cover
+    footballerImage: MESSI,
     tracks: [
-      "Imagine Dragons — Radioactive",
-      "Bastille — Pompeii",
-      "The 1975 — Chocolate",
-      "Alt-J — Tessellate",
-      "Arctic Monkeys — Why'd You Only Call Me When You're High?",
+      "John Newman — Love Me Again",
+      "Disclosure — F For You",
+      "Vampire Weekend — Worship You",
+      "The 1975 — The City",
+      "Chvrches — We Sink",
     ],
   },
   {
@@ -142,16 +142,16 @@ export const FIFA_EDITIONS: FifaEdition[] = [
     year: 2018,
     title: "FIFA 18",
     subtitle: "Official Soundtrack",
-    playlistId: "PLplaceholder_18",
+    playlistId: PLAYLIST_ID,
     accentColor: "#006064",
     accentColor2: "#1a237e",
     footballerImage: RONALDO,
     tracks: [
-      "Liam Gallagher — For What It's Worth",
-      "Imagine Dragons — Whatever It Takes",
-      "Stormzy — Blinded By Your Grace",
-      "Khalid — Location",
-      "Charli XCX — Boys",
+      "Lorde — Supercut",
+      "Avelino ft. Stormzy & Skepta — Energy",
+      "The XX — Dangerous",
+      "alt-J — Deadcrush",
+      "Run The Jewels — Mean Demeanor",
     ],
   },
   {
@@ -159,16 +159,16 @@ export const FIFA_EDITIONS: FifaEdition[] = [
     year: 2022,
     title: "FIFA 22",
     subtitle: "Official Soundtrack",
-    playlistId: "PLplaceholder_22",
+    playlistId: PLAYLIST_ID,
     accentColor: "#37474f",
     accentColor2: "#6a1b9a",
     footballerImage: MESSI,
     tracks: [
-      "Glass Animals — Heat Waves",
-      "Surfaces — Sunday Best",
-      "doja cat — Need to Know",
-      "beabadoobee — Last Day on Earth",
-      "Pa Salieu — Frontline",
+      "Glass Animals — I Don't Wanna Talk",
+      "Swedish House Mafia — Lifetime",
+      "The Chemical Brothers — The Darkness That You Fear",
+      "Easy Life — skeletons",
+      "Little Simz — Fear No Man",
     ],
   },
   {
@@ -176,16 +176,16 @@ export const FIFA_EDITIONS: FifaEdition[] = [
     year: 2025,
     title: "EA FC 25",
     subtitle: "Official Soundtrack",
-    playlistId: "PLplaceholder_fc25",
+    playlistId: PLAYLIST_ID,
     accentColor: "#004d40",
     accentColor2: "#00838f",
     footballerImage: RONALDO,
     tracks: [
-      "FKA twigs — Drums of Death",
-      "Nemzzz — Freestyle",
-      "Seun Kuti & Egypt 80 — K.O.N.K.",
-      "Overmono — So U Kno",
-      "Nkosi — Turn Up",
+      "Billie Eilish — CHIHIRO",
+      "Charli xcx — Sympathy is a knife",
+      "FKA twigs — Girl Feels Good",
+      "Disclosure — She's Gone, Dance On",
+      "Fontaines D.C. — Starburster",
     ],
   },
 ];

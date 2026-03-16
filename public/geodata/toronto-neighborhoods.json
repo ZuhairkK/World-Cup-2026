@@ -1,0 +1,96 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "id": "downtown-core",
+      "properties": { "name": "Downtown Core", "cityId": "bmo-field" },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [-79.3960, 43.6440], [-79.3720, 43.6440],
+          [-79.3720, 43.6570], [-79.3960, 43.6570],
+          [-79.3960, 43.6440]
+        ]]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "liberty-village",
+      "properties": { "name": "Liberty Village", "cityId": "bmo-field" },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [-79.4310, 43.6330], [-79.4090, 43.6330],
+          [-79.4090, 43.6430], [-79.4310, 43.6430],
+          [-79.4310, 43.6330]
+        ]]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "king-west",
+      "properties": { "name": "King West / Entertainment District", "cityId": "bmo-field" },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [-79.4090, 43.6390], [-79.3840, 43.6390],
+          [-79.3840, 43.6470], [-79.4090, 43.6470],
+          [-79.4090, 43.6390]
+        ]]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "harbourfront",
+      "properties": { "name": "Harbourfront / CityPlace", "cityId": "bmo-field" },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [-79.4090, 43.6300], [-79.3760, 43.6300],
+          [-79.3760, 43.6400], [-79.4090, 43.6400],
+          [-79.4090, 43.6300]
+        ]]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "queen-west",
+      "properties": { "name": "Queen West / Ossington", "cityId": "bmo-field" },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [-79.4350, 43.6440], [-79.4030, 43.6440],
+          [-79.4030, 43.6540], [-79.4350, 43.6540],
+          [-79.4350, 43.6440]
+        ]]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "distillery-district",
+      "properties": { "name": "Distillery District / St. Lawrence", "cityId": "bmo-field" },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [-79.3720, 43.6490], [-79.3580, 43.6490],
+          [-79.3580, 43.6570], [-79.3720, 43.6570],
+          [-79.3720, 43.6490]
+        ]]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "parkdale",
+      "properties": { "name": "Parkdale", "cityId": "bmo-field" },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [-79.4530, 43.6380], [-79.4310, 43.6380],
+          [-79.4310, 43.6520], [-79.4530, 43.6520],
+          [-79.4530, 43.6380]
+        ]]
+      }
+    }
+  ]
+}
