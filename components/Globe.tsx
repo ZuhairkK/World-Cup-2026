@@ -453,7 +453,7 @@ function GlobeTitle() {
           fontSize: 82,
           fontWeight: 900,
           fontStyle: "italic",
-          textTransform: "uppercase",
+          textTransform: "none",
           letterSpacing: "-0.01em",
           lineHeight: 0.88,
           color: "#F5C842",
@@ -465,25 +465,8 @@ function GlobeTitle() {
           marginBottom: 4,
         }}
       >
-        World Cup
+        TransitFIFA
       </h1>
-
-      <p
-        style={{
-          fontFamily: "var(--street-font)",
-          fontSize: 34,
-          fontWeight: 900,
-          fontStyle: "italic",
-          textTransform: "uppercase",
-          letterSpacing: "0.06em",
-          lineHeight: 1,
-          color: "#F5C842",
-          textShadow: "0 2px 16px rgba(0,0,0,0.8)",
-          marginBottom: 10,
-        }}
-      >
-        Fan Guide
-      </p>
 
       <p
         style={{
