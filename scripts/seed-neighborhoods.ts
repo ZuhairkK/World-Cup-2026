@@ -37,17 +37,17 @@ dotenv.config({ path: path.join(__dirname, "../.env.local") });
 
 const SUPABASE_URL      = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_KEY      = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const TRANSLINK_URL     = process.env.TRANSLINK_GTFS_URL;
-const TTC_URL           = process.env.TTC_GTFS_URL;
-const ETS_URL           = process.env.ETS_GTFS_URL;
+
+// GTFS zips live in public/gtfs/ — public data, no env var needed.
+// Drop translink.zip / ttc.zip / ets.zip there and re-run this script.
+const TRANSLINK_URL     = "public/gtfs/google_transit.zip";
+const TTC_URL           = "public/gtfs/ttc.zip";
+const ETS_URL           = "public/gtfs/ets.zip";
 
 const missing = (
   [
     ["NEXT_PUBLIC_SUPABASE_URL",  SUPABASE_URL],
     ["SUPABASE_SERVICE_ROLE_KEY", SUPABASE_KEY],
-    ["TRANSLINK_GTFS_URL",        TRANSLINK_URL],
-    ["TTC_GTFS_URL",              TTC_URL],
-    ["ETS_GTFS_URL",              ETS_URL],
   ] as [string, string | undefined][]
 ).filter(([, v]) => !v).map(([k]) => k);
 
