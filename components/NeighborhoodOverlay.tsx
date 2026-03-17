@@ -158,7 +158,7 @@ export default function NeighborhoodOverlay({ cityId, onHeatmapData }: Neighborh
     <div
       style={{
         position: "absolute",
-        top: 110,
+        top: 70,
         left: 20,
         zIndex: 10,
         width: isOpen ? 240 : "auto",
@@ -269,8 +269,8 @@ export default function NeighborhoodOverlay({ cityId, onHeatmapData }: Neighborh
             ))}
           </div>
 
-          {/* Ranked neighbourhood list */}
-          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          {/* Ranked neighbourhood list — scrollable */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 4, maxHeight: 260, overflowY: "auto", paddingRight: 4 }}>
             {ranked.map((n, i) => (
               <div
                 key={n.id}

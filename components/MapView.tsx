@@ -35,6 +35,8 @@ import { PROVIDER_META } from "@/data/micromobility";
 // ─── Imperative API exposed to parent ─────────────────────────────────────────
 export interface MapViewHandle {
   flyTo: (lat: number, lng: number, zoom?: number) => void;
+  /** Draw (or clear) the player free-form route in the cyan player-route layer. */
+  setPlayerRoute: (geojson: GeoJSON.Geometry | null) => void;
 }
 
 // ─── Source / Layer IDs ────────────────────────────────────────────────────────
@@ -49,6 +51,8 @@ const SHUTTLE_STOPS_LAYER   = "shuttle-stops-circle";
 const NEIGHBORHOOD_SOURCE   = "neighborhood-heatmap";
 const NEIGHBORHOOD_FILL     = "neighborhood-fill";
 const NEIGHBORHOOD_OUTLINE  = "neighborhood-outline";
+const PLAYER_ROUTE_SOURCE   = "player-route";
+const PLAYER_ROUTE_LAYER    = "player-route-line";
 
 const MAP_STYLE = "mapbox://styles/mapbox/satellite-streets-v12";
 
@@ -73,6 +77,8 @@ interface MapViewProps {
   activeProviders?: Set<MicromobilityProvider>;
   /** Neighbourhood heatmap GeoJSON — null clears the layer */
   neighborhoodHeatmap?: GeoJSON.FeatureCollection | null;
+  /** Called once after the map style finishes loading — gives parent raw map access */
+  onMapReady?: (map: mapboxgl.Map) => void;
 }
 
 const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
@@ -85,6 +91,7 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
     micromobilityDocks = [],
     activeProviders = new Set(),
     neighborhoodHeatmap,
+    onMapReady,
   },
   ref
 ) {
@@ -121,6 +128,7 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
 
     map.on("load", () => {
       mapReadyRef.current = true;
+      onMapReady?.(map);
 
       // ── Satellite desaturation ────────────────────────────────────────────
       map.setPaintProperty("satellite", "raster-saturation", -0.6);
@@ -229,6 +237,25 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
           "text-color": "#00B4D8",
           "text-halo-color": "#000",
           "text-halo-width": 1.5,
+        },
+      });
+
+      // ── Player free-form route (cyan dashed) ─────────────────────────────
+      // Kept separate from the gold anchor route so both layers can coexist.
+      map.addSource(PLAYER_ROUTE_SOURCE, {
+        type: "geojson",
+        data: { type: "Feature", geometry: { type: "LineString", coordinates: [] }, properties: {} },
+      });
+      map.addLayer({
+        id: PLAYER_ROUTE_LAYER,
+        type: "line",
+        source: PLAYER_ROUTE_SOURCE,
+        layout: { "line-join": "round", "line-cap": "round" },
+        paint: {
+          "line-color": "#00E5FF",
+          "line-width": 4,
+          "line-opacity": 0.85,
+          "line-dasharray": [3, 2],
         },
       });
 
@@ -387,7 +414,18 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
         essential: true,
       });
     },
-  }));
+    setPlayerRoute(geojson: GeoJSON.Geometry | null) {
+      whenReady((map) => {
+        const source = map.getSource(PLAYER_ROUTE_SOURCE) as mapboxgl.GeoJSONSource | undefined;
+        if (!source) return;
+        source.setData({
+          type: "Feature",
+          geometry: geojson ?? { type: "LineString", coordinates: [] },
+          properties: {},
+        });
+      });
+    },
+  }), [whenReady]);
 
   return <div ref={containerRef} style={{ width: "100%", height: "100%" }} />;
 });

@@ -14,9 +14,9 @@
  * - The zoom-in is a manual camera lerp inside useFrame; once the camera
  *   reaches a threshold distance we fire the callback.
  * - Stars are a simple Points mesh for depth/atmosphere.
- * - Flag compositing: each country's flag PNG is drawn onto an offscreen
- *   canvas at the correct equirectangular UV position, then handed to Three.js
- *   as a CanvasTexture. No shaders or DecalGeometry needed.
+ * - Flag texture: flag images composited onto a canvas via spherical Voronoi
+ *   (each pixel → nearest seed → flag image). Boundaries are smoothly blended
+ *   so there are no hard separation lines between panels.
  */
 
 import { useRef, useState, useCallback, useEffect } from "react";
@@ -31,21 +31,11 @@ import NintendoSwitch from "@/components/NintendoSwitch";
 // ─── Globe radius constant ────────────────────────────────────────────────────
 const GLOBE_RADIUS = 2;
 
-// ─── Soccer ball panel seeds — spherical Voronoi layout ──────────────────────
+// ─── Flag seed positions — distributed across the globe ──────────────────────
 //
-// 21 seed points arranged in 5 concentric rings on the sphere surface.
-// The spherical Voronoi diagram of these seeds produces large, organically
-// curved panels that look like the inflated panels of a real match ball.
-//
-// Ring structure (1 + 5 + 5 + 5 + 5 = 21):
-//   Polar cap  — 1 panel  at the north pole
-//   Upper ring — 5 panels at lat ≈ +52°, every 72° longitude
-//   Mid-upper  — 5 panels at lat ≈ +16°, every 72°, offset +36°
-//   Mid-lower  — 5 panels at lat ≈ -16°, every 72°, offset  0°
-//   Lower ring — 5 panels at lat ≈ -52°, every 72°, offset +36°
-//
-// Flags are chosen for maximum colour variety and visual contrast so the ball
-// looks vibrant from every angle.
+// 21 points arranged in 5 concentric rings for even coverage.
+// Each entry maps a country code to a lat/lng where its flag plane will float.
+// Flags chosen for maximum colour variety so the globe looks vibrant from all angles.
 const PANEL_SEEDS: ReadonlyArray<{ code: string; lat: number; lng: number }> = [
   // ── Polar cap ──────────────────────────────────────────────────────────────
   { code: "ca", lat:  80, lng:    0 },   // Canada — red/white
@@ -79,8 +69,7 @@ const PANEL_SEEDS: ReadonlyArray<{ code: string; lat: number; lng: number }> = [
   { code: "za", lat: -52, lng:  -36 },   // South Africa — rainbow
 ] as const;
 
-// ─── Utility: load an HTMLImageElement via Promise ────────────────────────────
-// No crossOrigin needed — all assets are same-origin (public/).
+// ─── Utility: load an image element ──────────────────────────────────────────
 function loadImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -88,6 +77,138 @@ function loadImage(src: string): Promise<HTMLImageElement> {
     img.onerror = () => reject(new Error(`[Globe] Could not load: ${src}`));
     img.src = src;
   });
+}
+
+// ─── Precomputed seed frame ───────────────────────────────────────────────────
+interface SeedFrame {
+  sx: number; sy: number; sz: number; // unit sphere position
+  rx: number; ry: number; rz: number; // local right axis (tangent)
+  ux: number; uy: number; uz: number; // local up axis (tangent)
+}
+
+function buildSeedFrame(lat: number, lng: number): SeedFrame {
+  const phi   = (90 - lat) * (Math.PI / 180);
+  const theta = (lng + 180) * (Math.PI / 180);
+  const sx = -Math.sin(phi) * Math.cos(theta);
+  const sy =  Math.cos(phi);
+  const sz =  Math.sin(phi) * Math.sin(theta);
+
+  // right = seed × Y  →  (-sz, 0, sx)
+  const rLen = Math.sqrt(sz * sz + sx * sx);
+  let rx: number, ry: number, rz: number;
+  if (rLen > 0.01) { rx = -sz / rLen; ry = 0; rz = sx / rLen; }
+  else             { rx = 1;           ry = 0; rz = 0; } // pole fallback
+
+  // up = right × seed
+  const ux = ry * sz - rz * sy;
+  const uy = rz * sx - rx * sz;
+  const uz = rx * sy - ry * sx;
+
+  return { sx, sy, sz, rx, ry, rz, ux, uy, uz };
+}
+
+// ─── Build the Voronoi flag globe texture ─────────────────────────────────────
+//
+// Each output pixel is mapped to a point on the unit sphere (equirectangular).
+// We find the two nearest Voronoi seeds (by chord distance) and sample the
+// corresponding flag image. Near boundaries the two flag colours are crossfaded
+// so there are no hard separation lines.
+async function buildFlagTexture(): Promise<THREE.CanvasTexture> {
+  const W = 2048, H = 1024; // output texture resolution
+  const FW = 256, FH = 170; // internal flag resolution for pixel sampling
+
+  // Load each flag and rasterise it onto a small canvas for pixel access
+  const flagPixels: Uint8ClampedArray[] = await Promise.all(
+    PANEL_SEEDS.map(async (s) => {
+      const img = await loadImage(`/flags/${s.code}.png`);
+      const fc  = document.createElement("canvas");
+      fc.width  = FW;
+      fc.height = FH;
+      fc.getContext("2d")!.drawImage(img, 0, 0, FW, FH);
+      return fc.getContext("2d")!.getImageData(0, 0, FW, FH).data;
+    })
+  );
+
+  // Precompute local tangent frames for each seed (avoids per-pixel allocation)
+  const frames: SeedFrame[] = PANEL_SEEDS.map(s => buildSeedFrame(s.lat, s.lng));
+
+  const canvas = document.createElement("canvas");
+  canvas.width  = W;
+  canvas.height = H;
+  const ctx = canvas.getContext("2d")!;
+  const out = ctx.createImageData(W, H);
+  const buf = out.data;
+
+  // How much of the flag's extent maps to one Voronoi cell:
+  // smaller → flag is more "zoomed in" (shows less of it); larger → more visible.
+  const SCALE = 1.4;
+
+  for (let py = 0; py < H; py++) {
+    // Equirectangular: top = +90°, bottom = -90°
+    const lat    = Math.PI * (0.5 - (py + 0.5) / H);
+    const cosLat = Math.cos(lat);
+    const sinLat = Math.sin(lat);
+
+    for (let px = 0; px < W; px++) {
+      const lng = 2 * Math.PI * ((px + 0.5) / W) - Math.PI;
+      const nx  = cosLat * Math.cos(lng);
+      const ny  = sinLat;
+      const nz  = cosLat * Math.sin(lng);
+
+      // ── Find nearest two seeds (squared chord distance) ──────────────────
+      let i1 = 0, i2 = 1, d1 = 1e9, d2 = 1e9;
+      for (let i = 0; i < frames.length; i++) {
+        const f  = frames[i];
+        const dx = nx - f.sx, dy = ny - f.sy, dz = nz - f.sz;
+        const d  = dx * dx + dy * dy + dz * dz;
+        if      (d < d1) { d2 = d1; i2 = i1; d1 = d; i1 = i; }
+        else if (d < d2) { d2 = d; i2 = i; }
+      }
+
+      // ── Sample helper: project world point onto seed's tangent plane ──────
+      const sample = (fi: number): [number, number, number] => {
+        const f    = frames[fi];
+        const dot  = nx * f.sx + ny * f.sy + nz * f.sz;
+        // tangent component (remove the part along the seed direction)
+        const tx   = nx - f.sx * dot;
+        const ty   = ny - f.sy * dot;
+        const tz   = nz - f.sz * dot;
+        const uLoc = tx * f.rx + ty * f.ry + tz * f.rz;
+        const vLoc = tx * f.ux + ty * f.uy + tz * f.uz;
+        const iu   = Math.min(FW - 1, Math.max(0, Math.round(( uLoc / SCALE + 0.5) * (FW - 1))));
+        const iv   = Math.min(FH - 1, Math.max(0, Math.round((-vLoc / SCALE + 0.5) * (FH - 1))));
+        const idx  = (iv * FW + iu) * 4;
+        const fd   = flagPixels[fi];
+        return [fd[idx], fd[idx + 1], fd[idx + 2]];
+      };
+
+      // ── Smooth blend near Voronoi boundary ───────────────────────────────
+      // ratio = d1/d2: 0 at seed centre, 1 at boundary midpoint.
+      // We start blending when ratio > 0.55, fully blended at 1.0.
+      const ratio = d1 / d2;
+      const blend = ratio < 0.55 ? 0 : (ratio - 0.55) / 0.45;
+
+      const outIdx = (py * W + px) * 4;
+      const [r1, g1, b1] = sample(i1);
+
+      if (blend < 0.01) {
+        buf[outIdx]     = r1;
+        buf[outIdx + 1] = g1;
+        buf[outIdx + 2] = b1;
+      } else {
+        const [r2, g2, b2] = sample(i2);
+        buf[outIdx]     = Math.round(r1 * (1 - blend) + r2 * blend);
+        buf[outIdx + 1] = Math.round(g1 * (1 - blend) + g2 * blend);
+        buf[outIdx + 2] = Math.round(b1 * (1 - blend) + b2 * blend);
+      }
+      buf[outIdx + 3] = 255;
+    }
+  }
+
+  ctx.putImageData(out, 0, 0);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
 }
 
 // ─── Utility: convert lat/lng to a 3D point on a unit sphere ─────────────────
@@ -215,145 +336,24 @@ function CameraZoom({ target, onZoomComplete }: CameraZoomProps) {
   return null;
 }
 
-// ─── Earth sphere — soccer ball flag panels via spherical Voronoi ─────────────
-//
-// Flow:
-//  1. Load all 21 flag PNGs in parallel
-//  2. Compute a spherical Voronoi diagram: for every texel find the nearest
-//     seed point (max dot-product on the unit sphere → closest great-circle
-//     distance). Each texel is labelled with its panel index.
-//  3. Paint each panel: draw the flag centred at the seed UV, large enough to
-//     blanket the whole cell, then copy only that cell's labelled texels.
-//  4. Groove pass: a two-pass Chebyshev distance transform locates every texel
-//     within GROOVE_R pixels of a panel boundary; a cosine ramp darkens those
-//     texels to simulate the deep inset groove on a real match ball.
-//  5. A faint 1–2 px bright highlight just outside the groove adds the subtle
-//     "raised panel" rim visible on the reference image.
-//  6. Hand the CanvasTexture to Three.js. meshStandardMaterial with the scene
-//     lighting gives the ball its inflated 3-D shading automatically.
+// ─── Earth sphere — Voronoi flag texture ─────────────────────────────────────
+// Builds the texture asynchronously on mount; renders nothing until it's ready.
 function EarthSphere() {
-  const matRef = useRef<THREE.MeshStandardMaterial>(null);
+  const [texture, setTexture] = useState<THREE.CanvasTexture | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-
-    async function buildTexture() {
-      const W = 2048, H = 1024;
-      const canvas = document.createElement("canvas");
-      canvas.width  = W;
-      canvas.height = H;
-      const ctx = canvas.getContext("2d")!;
-
-      // ── 1. Neutral base (only visible if a flag fails to load) ───────────────
-      ctx.fillStyle = "#888";
-      ctx.fillRect(0, 0, W, H);
-
-      // ── 2. Load all flag PNGs in parallel ─────────────────────────────────
-      const flagResults = await Promise.allSettled(
-        PANEL_SEEDS.map(s => loadImage(`/flags/${s.code}.png`))
-      );
-      if (cancelled) return;
-
-      // ── 3. Seed → pre-computed 3-D unit vectors ────────────────────────────
-      const N = PANEL_SEEDS.length;
-      const seedVec = PANEL_SEEDS.map(({ lat, lng }) => {
-        const phi   = (90 - lat) * (Math.PI / 180);
-        const theta = (lng + 180) * (Math.PI / 180);
-        return [
-          -Math.sin(phi) * Math.cos(theta),
-           Math.cos(phi),
-           Math.sin(phi) * Math.sin(theta),
-        ] as [number, number, number];
-      });
-
-      // ── 4. Spherical Voronoi — O(W × H × N) ───────────────────────────────
-      //    For each texel convert UV → unit sphere, find max dot-product seed.
-      const voronoi = new Uint8Array(W * H);
-      for (let y = 0; y < H; y++) {
-        const phi    = (y / H) * Math.PI;           // 0 (N pole) → π (S pole)
-        const sinPhi = Math.sin(phi);
-        const cosPhi = Math.cos(phi);
-        const row    = y * W;
-        for (let x = 0; x < W; x++) {
-          const theta = (x / W) * 2 * Math.PI;      // 0 → 2π
-          const px = -sinPhi * Math.cos(theta);
-          const py =  cosPhi;
-          const pz =  sinPhi * Math.sin(theta);
-          let best = 0, bestDot = -2;
-          for (let c = 0; c < N; c++) {
-            const v = seedVec[c];
-            const d = px * v[0] + py * v[1] + pz * v[2];
-            if (d > bestDot) { bestDot = d; best = c; }
-          }
-          voronoi[row + x] = best;
-        }
-      }
-      if (cancelled) return;
-
-      // ── 5. Paint flags into Voronoi cells ─────────────────────────────────
-      //    Off-white seam colour pre-fills mainData; each flag overwrites only
-      //    its own cell's texels.
-      const mainData = new Uint8ClampedArray(W * H * 4);
-      // Alpha fully opaque everywhere; RGB filled by flags below
-      for (let i = 3; i < mainData.length; i += 4) mainData[i] = 255;
-
-      for (let c = 0; c < N; c++) {
-        const res = flagResults[c];
-        if (res.status !== "fulfilled") continue;
-        const img = res.value;
-
-        // Seed UV centre
-        const cx = Math.round(((PANEL_SEEDS[c].lng + 180) / 360) * W);
-        const cy = Math.round(((90 - PANEL_SEEDS[c].lat) / 180) * H);
-
-        // Flag drawn large enough (30 % of canvas width) to blanket any cell
-        const fw = Math.round(W * 0.30);
-        const fh = Math.round(fw * img.naturalHeight / img.naturalWidth);
-
-        // Off-screen canvas for this flag (full W×H so pixel indices match)
-        const tmp  = document.createElement("canvas");
-        tmp.width  = W; tmp.height = H;
-        const tc   = tmp.getContext("2d")!;
-        // Draw three times to handle horizontal wrap at ±180°
-        for (const ox of [-W, 0, W]) {
-          tc.drawImage(img, cx - fw / 2 + ox, cy - fh / 2, fw, fh);
-        }
-        const fd = tc.getImageData(0, 0, W, H).data;
-
-        for (let i = 0; i < W * H; i++) {
-          if (voronoi[i] === c) {
-            const p = i * 4;
-            mainData[p]   = fd[p];
-            mainData[p+1] = fd[p+1];
-            mainData[p+2] = fd[p+2];
-          }
-        }
-      }
-
-      ctx.putImageData(new ImageData(mainData, W, H), 0, 0);
-      if (cancelled || !matRef.current) return;
-
-      // ── 7. Push to Three.js ────────────────────────────────────────────────
-      const tex = new THREE.CanvasTexture(canvas);
-      tex.colorSpace  = THREE.SRGBColorSpace;
-      tex.needsUpdate = true;
-      matRef.current.map = tex;
-      matRef.current.color.set(0xffffff);
-      matRef.current.needsUpdate = true;
-    }
-
-    buildTexture();
+    buildFlagTexture()
+      .then(tex => { if (!cancelled) setTexture(tex); })
+      .catch(err => console.error("[Globe] flag texture failed:", err));
     return () => { cancelled = true; };
   }, []);
 
+  if (!texture) return null;
+
   return (
     <Sphere args={[GLOBE_RADIUS, 64, 64]}>
-      {/*
-        meshStandardMaterial so the directional + point lights in <Scene>
-        produce the shading that makes the panels look inflated/3-D.
-        Off-white colour shows while the async texture builds.
-      */}
-      <meshStandardMaterial ref={matRef} color="#888888" roughness={0.55} metalness={0.0} />
+      <meshStandardMaterial map={texture} roughness={0.6} metalness={0.0} />
     </Sphere>
   );
 }
@@ -405,7 +405,7 @@ function Scene({ zoomTarget, onZoomComplete, onStadiumSelect, isZooming }: Scene
       {/* Stars backdrop */}
       <Stars radius={80} depth={50} count={4000} factor={3} fade speed={0.6} />
 
-      {/* Globe layers */}
+      {/* Globe layers — flag texture builds async, sphere appears once ready */}
       <EarthSphere />
       <GlobeWireframe />
       <Atmosphere />

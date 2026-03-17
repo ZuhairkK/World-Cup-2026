@@ -137,7 +137,7 @@ export default function ModeCards({
                   transition: "background 0.2s ease",
                 }}
               />
-              <div style={{ padding: isShuttle ? "8px 12px" : "10px 6px 12px" }}>
+              <div style={{ padding: isShuttle ? "7px 10px" : "8px 5px 10px" }}>
 
                 {isShuttle ? (
                   /* ── Shuttle card — horizontal layout since it spans full width ── */
@@ -170,7 +170,7 @@ export default function ModeCards({
                         <span
                           style={{
                             fontFamily: "var(--street-font)",
-                            fontSize: 28,
+                            fontSize: 24,
                             fontWeight: 900,
                             fontStyle: "italic",
                             color: active ? "white" : "rgba(255,255,255,0.55)",
@@ -201,7 +201,7 @@ export default function ModeCards({
                 ) : (
                   /* ── Standard mode card — vertical layout ── */
                   <>
-                    <div style={{ fontSize: 20, marginBottom: 4, lineHeight: 1 }}>{meta.icon}</div>
+                    <div style={{ fontSize: 18, marginBottom: 3, lineHeight: 1 }}>{meta.icon}</div>
                     <div
                       style={{
                         fontFamily: "var(--street-font)",
@@ -222,7 +222,7 @@ export default function ModeCards({
                         <div
                           style={{
                             fontFamily: "var(--street-font)",
-                            fontSize: 32,
+                            fontSize: 28,
                             fontWeight: 900,
                             fontStyle: "italic",
                             lineHeight: 0.95,

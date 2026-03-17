@@ -3,55 +3,36 @@
 /**
  * MusicPlayer.tsx
  *
- * Apple Music–style white/frosted glass music player, mounted bottom-left
- * on the map view.
+ * Apple Music–style frosted-glass music player, mounted bottom-left.
  *
- * Two stacked cards:
- *  • Top card  — blurred footballer background image (or accent gradient) +
- *                frosted white overlay + album art chip + track/artist info +
- *                progress bar + shuffle / prev / pause / next / repeat controls.
- *  • Bottom card — edition title + "tracklist" blue tag + track list rows.
+ * Audio: HTML5 <audio> element — no third-party API needed.
+ * Drop .mp3 files into /public/music/ with filenames matching the
+ * `src` fields in data/fifaSoundtracks.ts to enable playback.
  *
- * Footballer background fades out during the edition-flip and fades back in
- * once the new edition is set, giving a smooth cross-fade effect.
+ * Controls:
+ *  ⇄  Shuffle — randomises track order within the current edition
+ *  |◀  Prev    — previous track (or restart if < 3 s in)
+ *  ▶  Play / Pause
+ *  ▶|  Next    — advance one track (respects shuffle order)
+ *  ↺  Edition  — cycle through FIFA editions (prev / next buttons)
  *
- * Audio: YouTube IFrame Player API (hidden 1×1 div). Replace playlist IDs in
- * data/fifaSoundtracks.ts with real YouTube playlist IDs to enable playback.
+ * Chip image: rotates through player-ronaldo.jpg, player-messi.jpg,
+ * and music-ui-reference.jpg as defined per edition in fifaSoundtracks.ts.
  */
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { FIFA_EDITIONS, type FifaEdition } from "@/data/fifaSoundtracks";
 
-// ─── Minimal TypeScript types for the YouTube IFrame API ──────────────────────
-interface YTPlayer {
-  playVideo(): void;
-  pauseVideo(): void;
-  stopVideo(): void;
-  loadPlaylist(opts: { listType: string; list: string; index?: number }): void;
-  getPlayerState(): number;
-  getVideoData(): { title: string; author: string };
-  destroy(): void;
-}
+// ─── Helpers ───────────────────────────────────────────────────────────────────
 
-declare global {
-  interface Window {
-    YT?: {
-      Player: new (
-        id: string,
-        opts: {
-          height: string | number;
-          width: string | number;
-          playerVars?: Record<string, string | number>;
-          events?: {
-            onReady?: (e: { target: YTPlayer }) => void;
-            onStateChange?: (e: { data: number; target: YTPlayer }) => void;
-          };
-        }
-      ) => YTPlayer;
-      PlayerState: { PLAYING: 1; PAUSED: 2; ENDED: 0; BUFFERING: 3; CUED: 5 };
-    };
-    onYouTubeIframeAPIReady?: () => void;
+/** Fisher-Yates shuffle — returns a new randomised array of indices */
+function buildShuffleOrder(length: number): number[] {
+  const order = Array.from({ length }, (_, i) => i);
+  for (let i = order.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [order[i], order[j]] = [order[j], order[i]];
   }
+  return order;
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -60,96 +41,158 @@ export default function MusicPlayer() {
   const [isVisible, setIsVisible]       = useState(true);
   const [isPlaying, setIsPlaying]       = useState(false);
   const [editionIndex, setEditionIndex] = useState(0);
-  const [currentTrack, setCurrentTrack] = useState("");
+  const [trackIndex, setTrackIndex]     = useState(0);
+  const [isShuffled, setIsShuffled]     = useState(false);
+  const [shuffleOrder, setShuffleOrder] = useState<number[]>([]);
   const [isFlipping, setIsFlipping]     = useState(false);
   const [flipDir, setFlipDir]           = useState<"left" | "right">("right");
 
-  const playerRef     = useRef<YTPlayer | null>(null);
-  const intervalRef   = useRef<ReturnType<typeof setInterval> | null>(null);
-  const flipTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  // Refs to avoid stale closures inside audio event handlers
+  const audioRef        = useRef<HTMLAudioElement | null>(null);
+  const trackIndexRef   = useRef(0);
+  const editionIndexRef = useRef(0);
+  const isShuffledRef   = useRef(false);
+  const shuffleOrderRef = useRef<number[]>([]);
+  const isPlayingRef    = useRef(false);
+  const flipTimersRef   = useRef<ReturnType<typeof setTimeout>[]>([]);
 
-  const edition: FifaEdition = FIFA_EDITIONS[editionIndex];
-  const hasRealPlaylist = !edition.playlistId.startsWith("PLplaceholder");
+  // Keep refs in sync with state
+  useEffect(() => { trackIndexRef.current   = trackIndex;   }, [trackIndex]);
+  useEffect(() => { editionIndexRef.current = editionIndex; }, [editionIndex]);
+  useEffect(() => { isShuffledRef.current   = isShuffled;   }, [isShuffled]);
+  useEffect(() => { shuffleOrderRef.current = shuffleOrder; }, [shuffleOrder]);
+  useEffect(() => { isPlayingRef.current    = isPlaying;    }, [isPlaying]);
 
-  // ── Load YouTube IFrame API + cleanup ───────────────────────────────────────
+  const edition      = FIFA_EDITIONS[editionIndex];
+  const currentTrack = edition.tracks[trackIndex] ?? edition.tracks[0];
+
+  // ── Create audio element once ──────────────────────────────────────────────
   useEffect(() => {
-    if (!document.getElementById("yt-api-script")) {
-      const tag = document.createElement("script");
-      tag.id = "yt-api-script";
-      tag.src = "https://www.youtube.com/iframe_api";
-      document.head.appendChild(tag);
-    }
-    return () => {
-      flipTimersRef.current.forEach(clearTimeout);
-      if (intervalRef.current) clearInterval(intervalRef.current);
-      try { playerRef.current?.destroy(); } catch (_) { /* noop */ }
-      playerRef.current = null;
-    };
-  }, []);
+    const audio = new Audio();
+    audio.preload = "auto";
+    audioRef.current = audio;
 
-  // ── Initialize YT player for a given edition index ──────────────────────────
-  const initPlayer = useCallback((idx: number) => {
-    const ed = FIFA_EDITIONS[idx];
-    if (ed.playlistId.startsWith("PLplaceholder")) return;
+    // Auto-advance when a track ends
+    const handleEnded = () => {
+      const tracks = FIFA_EDITIONS[editionIndexRef.current].tracks;
+      const idx    = trackIndexRef.current;
 
-    const setup = () => {
-      if (playerRef.current) {
-        try { playerRef.current.destroy(); } catch (_) { /* noop */ }
-        playerRef.current = null;
+      if (isShuffledRef.current) {
+        const order = shuffleOrderRef.current;
+        const pos   = order.indexOf(idx);
+        setTrackIndex(order[(pos + 1) % order.length]);
+      } else {
+        setTrackIndex((idx + 1) % tracks.length);
       }
-      playerRef.current = new window.YT!.Player("yt-hidden-player", {
-        height: "1",
-        width: "1",
-        playerVars: { listType: "playlist", list: ed.playlistId, autoplay: 1, controls: 0 },
-        events: {
-          onStateChange: (e) => {
-            const playing = e.data === 1;
-            setIsPlaying(playing);
-            if (playing) {
-              try {
-                const data = e.target.getVideoData();
-                setCurrentTrack(data.title || ed.tracks[0]);
-              } catch (_) {
-                setCurrentTrack(ed.tracks[0]);
-              }
-            }
-          },
-        },
-      });
     };
 
-    if (window.YT?.Player) {
-      setup();
+    audio.addEventListener("ended", handleEnded);
+
+    return () => {
+      audio.removeEventListener("ended", handleEnded);
+      audio.pause();
+      audioRef.current = null;
+    };
+  }, []);
+
+  // ── Load new src whenever edition or track changes ─────────────────────────
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    const src = edition.tracks[trackIndex]?.src;
+    if (!src) return;
+
+    // encodeURI handles spaces and special chars in filenames
+    audio.src = encodeURI(src);
+    audio.load();
+
+    if (isPlayingRef.current) {
+      audio.play().catch(() => {
+        setIsPlaying(false);
+        isPlayingRef.current = false;
+      });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editionIndex, trackIndex]);
+
+  // ── Play / Pause ─────────────────────────────────────────────────────────
+  const handlePlayPause = useCallback(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    if (!audio.src) {
+      // First press — load current track
+      const src = FIFA_EDITIONS[editionIndexRef.current].tracks[trackIndexRef.current]?.src;
+      if (!src) return;
+      audio.src = encodeURI(src);
+      audio.load();
+    }
+
+    if (isPlayingRef.current) {
+      audio.pause();
+      setIsPlaying(false);
     } else {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-      intervalRef.current = setInterval(() => {
-        if (window.YT?.Player) {
-          clearInterval(intervalRef.current!);
-          intervalRef.current = null;
-          setup();
-        }
-      }, 200);
+      audio.play().catch(() => setIsPlaying(false));
+      setIsPlaying(true);
     }
   }, []);
 
-  // ── Play / Pause ─────────────────────────────────────────────────────────────
-  const handlePlayPause = useCallback(() => {
-    if (!playerRef.current) {
-      initPlayer(editionIndex);
-      setIsPlaying(true);
+  // ── Next track ───────────────────────────────────────────────────────────
+  const handleNext = useCallback(() => {
+    const tracks = FIFA_EDITIONS[editionIndexRef.current].tracks;
+    const idx    = trackIndexRef.current;
+
+    if (isShuffledRef.current) {
+      const order = shuffleOrderRef.current;
+      const pos   = order.indexOf(idx);
+      setTrackIndex(order[(pos + 1) % order.length]);
+    } else {
+      setTrackIndex((idx + 1) % tracks.length);
+    }
+  }, []);
+
+  // ── Prev track ───────────────────────────────────────────────────────────
+  const handlePrev = useCallback(() => {
+    const audio  = audioRef.current;
+    const tracks = FIFA_EDITIONS[editionIndexRef.current].tracks;
+    const idx    = trackIndexRef.current;
+
+    // If more than 3 s in, restart current track instead of going back
+    if (audio && audio.currentTime > 3) {
+      audio.currentTime = 0;
       return;
     }
-    if (isPlaying) {
-      playerRef.current.pauseVideo();
-    } else {
-      playerRef.current.playVideo();
-    }
-  }, [isPlaying, editionIndex, initPlayer]);
 
-  // ── Edition flip ─────────────────────────────────────────────────────────────
+    if (isShuffledRef.current) {
+      const order = shuffleOrderRef.current;
+      const pos   = order.indexOf(idx);
+      setTrackIndex(order[(pos - 1 + order.length) % order.length]);
+    } else {
+      setTrackIndex((idx - 1 + tracks.length) % tracks.length);
+    }
+  }, []);
+
+  // ── Shuffle toggle ───────────────────────────────────────────────────────
+  const handleShuffle = useCallback(() => {
+    setIsShuffled((prev) => {
+      const next = !prev;
+      if (next) {
+        const order = buildShuffleOrder(
+          FIFA_EDITIONS[editionIndexRef.current].tracks.length
+        );
+        setShuffleOrder(order);
+        shuffleOrderRef.current = order;
+      }
+      return next;
+    });
+  }, []);
+
+  // ── Edition change ───────────────────────────────────────────────────────
   const changeEdition = useCallback(
     (dir: "left" | "right") => {
       if (isFlipping) return;
+
       const nextIdx =
         dir === "right"
           ? (editionIndex + 1) % FIFA_EDITIONS.length
@@ -160,16 +203,28 @@ export default function MusicPlayer() {
 
       const t1 = setTimeout(() => {
         setEditionIndex(nextIdx);
-        setCurrentTrack("");
-        if (isPlaying) initPlayer(nextIdx);
+        setTrackIndex(0);
+        trackIndexRef.current   = 0;
+        editionIndexRef.current = nextIdx;
+
+        // Rebuild shuffle order for new edition
+        if (isShuffledRef.current) {
+          const order = buildShuffleOrder(FIFA_EDITIONS[nextIdx].tracks.length);
+          setShuffleOrder(order);
+          shuffleOrderRef.current = order;
+        }
       }, 200);
+
       const t2 = setTimeout(() => setIsFlipping(false), 420);
       flipTimersRef.current = [t1, t2];
     },
-    [isFlipping, editionIndex, isPlaying, initPlayer]
+    [isFlipping, editionIndex]
   );
 
-  // ── Album art chip flip style (3-D card flip on edition change) ──────────────
+  // Cleanup flip timers on unmount
+  useEffect(() => () => { flipTimersRef.current.forEach(clearTimeout); }, []);
+
+  // ── Chip flip animation style ─────────────────────────────────────────────
   const chipFlipStyle: React.CSSProperties = isFlipping
     ? {
         transform: `perspective(500px) rotateY(${flipDir === "right" ? "90deg" : "-90deg"})`,
@@ -182,18 +237,11 @@ export default function MusicPlayer() {
         transition: "transform 0.22s ease, opacity 0.22s ease",
       };
 
-  // ── Footballer background opacity — fades out while flipping, fades in after ─
   const bgOpacity = isFlipping ? 0 : 1;
 
   if (!isVisible) {
     return <ShowButton onClick={() => setIsVisible(true)} />;
   }
-
-  // ── Track display strings ────────────────────────────────────────────────────
-  const trackTitle  = currentTrack || edition.tracks[0].split(" — ")[0];
-  const trackArtist = currentTrack
-    ? edition.subtitle
-    : edition.tracks[0].split(" — ")[1] ?? edition.subtitle;
 
   return (
     <div
@@ -230,16 +278,16 @@ export default function MusicPlayer() {
                   backgroundSize: "cover",
                   backgroundPosition: "center top",
                   filter: "blur(12px) brightness(0.8) saturate(1.3)",
-                  transform: "scale(1.12)", // prevent blurred edges showing
+                  transform: "scale(1.12)",
                 }
               : {
                   background: `linear-gradient(135deg, ${edition.accentColor}, ${edition.accentColor2})`,
-                  filter: "blur(0px) brightness(0.55)",
+                  filter: "brightness(0.55)",
                 }),
           }}
         />
 
-        {/* White frosted glass overlay — 55% opacity so footballer shows through */}
+        {/* Frosted glass overlay */}
         <div
           style={{
             position: "absolute",
@@ -250,10 +298,9 @@ export default function MusicPlayer() {
           }}
         />
 
-        {/* Content sits on top of the background layers */}
         <div style={{ position: "relative", padding: "16px 16px 14px" }}>
 
-          {/* Close button — top right */}
+          {/* Close button */}
           <button
             onClick={() => setIsVisible(false)}
             title="Hide player"
@@ -278,17 +325,17 @@ export default function MusicPlayer() {
             ×
           </button>
 
-          {/* Track info row: album art chip + title/artist + waveform */}
+          {/* Track info row: chip photo + title/artist + waveform */}
           <div
             style={{
               display: "flex",
               alignItems: "center",
               gap: 12,
               marginBottom: 14,
-              paddingRight: 28, // don't overlap close button
+              paddingRight: 28,
             }}
           >
-            {/* Album art chip — flips on edition change */}
+            {/* Album art chip — shows player/reference photo, flips on edition change */}
             <div
               style={{
                 ...chipFlipStyle,
@@ -296,13 +343,19 @@ export default function MusicPlayer() {
                 height: 46,
                 borderRadius: 10,
                 flexShrink: 0,
-                background: `linear-gradient(135deg, ${edition.accentColor}, ${edition.accentColor2})`,
+                overflow: "hidden",
                 boxShadow: "0 3px 10px rgba(0,0,0,0.28)",
               }}
-            />
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={currentTrack.chipImage}
+                alt=""
+                style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "center top" }}
+              />
+            </div>
 
             <div style={{ flex: 1, minWidth: 0 }}>
-              {/* Track title */}
               <div
                 style={{
                   fontSize: 15,
@@ -316,9 +369,8 @@ export default function MusicPlayer() {
                   fontFamily: "var(--font-geist-sans), Arial, sans-serif",
                 }}
               >
-                {trackTitle}
+                {currentTrack.title}
               </div>
-              {/* Artist / subtitle */}
               <div
                 style={{
                   fontSize: 12,
@@ -330,20 +382,12 @@ export default function MusicPlayer() {
                   marginTop: 1,
                 }}
               >
-                {trackArtist}
+                {currentTrack.artist}
               </div>
             </div>
 
-            {/* Waveform bars — animate while playing */}
-            <div
-              style={{
-                display: "flex",
-                gap: 2,
-                alignItems: "flex-end",
-                height: 18,
-                flexShrink: 0,
-              }}
-            >
+            {/* Waveform bars */}
+            <div style={{ display: "flex", gap: 2, alignItems: "flex-end", height: 18, flexShrink: 0 }}>
               {[1, 2, 3, 4].map((i) => (
                 <div
                   key={i}
@@ -360,26 +404,9 @@ export default function MusicPlayer() {
             </div>
           </div>
 
-          {/* Progress bar */}
-          <div
-            style={{
-              position: "relative",
-              height: 8,
-              marginBottom: 14,
-              display: "flex",
-              alignItems: "center",
-            }}
-          >
-            {/* Track */}
-            <div
-              style={{
-                position: "absolute",
-                inset: "3px 0",
-                background: "rgba(0,0,0,0.12)",
-                borderRadius: 2,
-              }}
-            />
-            {/* Fill */}
+          {/* Progress bar — cosmetic */}
+          <div style={{ position: "relative", height: 8, marginBottom: 14, display: "flex", alignItems: "center" }}>
+            <div style={{ position: "absolute", inset: "3px 0", background: "rgba(0,0,0,0.12)", borderRadius: 2 }} />
             <div
               style={{
                 position: "absolute",
@@ -392,7 +419,6 @@ export default function MusicPlayer() {
                 borderRadius: 2,
               }}
             />
-            {/* Scrubber dot */}
             <div
               style={{
                 position: "absolute",
@@ -409,64 +435,55 @@ export default function MusicPlayer() {
             />
           </div>
 
-          {/* Playback controls: shuffle / prev / play+pause / next / repeat */}
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-            }}
-          >
-            {/* Shuffle */}
-            <LightCtrlBtn title="Shuffle">⇄</LightCtrlBtn>
+          {/* Controls */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
 
-            {/* Previous edition */}
-            <LightCtrlBtn onClick={() => changeEdition("left")} title="Previous edition">
-              |◀
+            {/* Shuffle */}
+            <LightCtrlBtn
+              onClick={handleShuffle}
+              title={isShuffled ? "Shuffle on" : "Shuffle off"}
+              active={isShuffled}
+            >
+              ⇄
             </LightCtrlBtn>
 
-            {/* Play / Pause — filled circle */}
+            {/* Previous edition (left) / Prev track (right click handled separately) */}
+            <LightCtrlBtn onClick={handlePrev} title="Previous track">|◀</LightCtrlBtn>
+
+            {/* Play / Pause */}
             <button
-              onClick={hasRealPlaylist ? handlePlayPause : undefined}
-              title={
-                !hasRealPlaylist
-                  ? "Add a YouTube playlist ID to fifaSoundtracks.ts"
-                  : isPlaying
-                  ? "Pause"
-                  : "Play"
-              }
+              onClick={handlePlayPause}
+              title={isPlaying ? "Pause" : "Play"}
               style={{
                 width: 44,
                 height: 44,
                 borderRadius: "50%",
-                background: !hasRealPlaylist ? "rgba(0,0,0,0.1)" : "#1c1c1e",
+                background: "#1c1c1e",
                 border: "none",
-                color: !hasRealPlaylist ? "rgba(0,0,0,0.25)" : "white",
+                color: "white",
                 fontSize: 15,
-                cursor: hasRealPlaylist ? "pointer" : "not-allowed",
+                cursor: "pointer",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
                 flexShrink: 0,
-                boxShadow: hasRealPlaylist ? "0 2px 10px rgba(0,0,0,0.28)" : "none",
+                boxShadow: "0 2px 10px rgba(0,0,0,0.28)",
                 transition: "all 0.15s ease",
               }}
             >
-              {!hasRealPlaylist ? "—" : isPlaying ? "⏸" : "▶"}
+              {isPlaying ? "⏸" : "▶"}
             </button>
 
-            {/* Next edition */}
-            <LightCtrlBtn onClick={() => changeEdition("right")} title="Next edition">
-              ▶|
-            </LightCtrlBtn>
+            {/* Next track */}
+            <LightCtrlBtn onClick={handleNext} title="Next track">▶|</LightCtrlBtn>
 
-            {/* Repeat */}
-            <LightCtrlBtn title="Repeat">↺</LightCtrlBtn>
+            {/* Next edition */}
+            <LightCtrlBtn onClick={() => changeEdition("right")} title="Next edition">↺</LightCtrlBtn>
           </div>
         </div>
       </div>
 
-      {/* ── Bottom card: tracklist styled as lyrics panel ────────────────────── */}
+      {/* ── Bottom card: tracklist ───────────────────────────────────────────── */}
       <div
         style={{
           borderRadius: 18,
@@ -477,15 +494,8 @@ export default function MusicPlayer() {
           boxShadow: "0 4px 20px rgba(0,0,0,0.22)",
         }}
       >
-        {/* Header: edition title + "tracklist" blue tag */}
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            marginBottom: 3,
-          }}
-        >
+        {/* Header */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3 }}>
           <span
             style={{
               fontSize: 16,
@@ -497,19 +507,11 @@ export default function MusicPlayer() {
           >
             {edition.title}
           </span>
-          <span
-            style={{
-              fontSize: 12,
-              fontWeight: 500,
-              color: "#007AFF",
-              fontFamily: "var(--font-geist-sans), Arial, sans-serif",
-            }}
-          >
+          <span style={{ fontSize: 12, fontWeight: 500, color: "#007AFF", fontFamily: "var(--font-geist-sans), Arial, sans-serif" }}>
             tracklist
           </span>
         </div>
 
-        {/* Edition subtitle — like a pronunciation line */}
         <div
           style={{
             fontSize: 11,
@@ -524,50 +526,34 @@ export default function MusicPlayer() {
 
         {/* Track rows */}
         <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-          {edition.tracks.map((track, i) => (
-            <div
-              key={track}
-              style={{
-                fontSize: 12,
-                color:
-                  i === 0 && isPlaying
-                    ? "#1c1c1e"
-                    : "rgba(0,0,0,0.35)",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-                transition: "color 0.2s",
-                fontFamily: "var(--font-geist-sans), Arial, sans-serif",
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-              }}
-            >
-              {/* Playing indicator */}
-              {i === 0 && isPlaying && (
-                <span style={{ color: "#007AFF", fontSize: 8, flexShrink: 0 }}>
-                  ♪
-                </span>
-              )}
-              {track}
-            </div>
-          ))}
+          {edition.tracks.map((track, i) => {
+            const isActive = i === trackIndex;
+            return (
+              <div
+                key={track.src}
+                style={{
+                  fontSize: 12,
+                  color: isActive && isPlaying ? "#1c1c1e" : "rgba(0,0,0,0.35)",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                  transition: "color 0.2s",
+                  fontFamily: "var(--font-geist-sans), Arial, sans-serif",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  cursor: "pointer",
+                }}
+                onClick={() => setTrackIndex(i)}
+              >
+                {isActive && isPlaying && (
+                  <span style={{ color: "#007AFF", fontSize: 8, flexShrink: 0 }}>♪</span>
+                )}
+                {track.title} — {track.artist}
+              </div>
+            );
+          })}
         </div>
-      </div>
-
-      {/* Hidden YouTube player container (1×1, off-screen) */}
-      <div
-        style={{
-          position: "absolute",
-          width: 1,
-          height: 1,
-          overflow: "hidden",
-          top: -9999,
-          left: -9999,
-        }}
-        aria-hidden="true"
-      >
-        <div id="yt-hidden-player" />
       </div>
     </div>
   );
@@ -577,10 +563,12 @@ export default function MusicPlayer() {
 function LightCtrlBtn({
   onClick,
   title,
+  active,
   children,
 }: {
   onClick?: () => void;
   title: string;
+  active?: boolean;
   children: React.ReactNode;
 }) {
   return (
@@ -590,7 +578,7 @@ function LightCtrlBtn({
       style={{
         background: "none",
         border: "none",
-        color: "rgba(0,0,0,0.55)",
+        color: active ? "#007AFF" : "rgba(0,0,0,0.55)",
         fontSize: 14,
         cursor: onClick ? "pointer" : "default",
         padding: "4px 6px",
@@ -599,10 +587,10 @@ function LightCtrlBtn({
         fontFamily: "Arial, sans-serif",
       }}
       onMouseEnter={(e) => {
-        (e.currentTarget as HTMLButtonElement).style.color = "#1c1c1e";
+        if (!active) (e.currentTarget as HTMLButtonElement).style.color = "#1c1c1e";
       }}
       onMouseLeave={(e) => {
-        (e.currentTarget as HTMLButtonElement).style.color = "rgba(0,0,0,0.55)";
+        if (!active) (e.currentTarget as HTMLButtonElement).style.color = "rgba(0,0,0,0.55)";
       }}
     >
       {children}
@@ -638,14 +626,8 @@ function ShowButton({ onClick }: { onClick: () => void }) {
         fontFamily: "var(--font-geist-sans), Arial, sans-serif",
         fontWeight: 600,
       }}
-      onMouseEnter={(e) => {
-        (e.currentTarget as HTMLButtonElement).style.background =
-          "rgba(255,255,255,0.97)";
-      }}
-      onMouseLeave={(e) => {
-        (e.currentTarget as HTMLButtonElement).style.background =
-          "rgba(255,255,255,0.85)";
-      }}
+      onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "rgba(255,255,255,0.97)"; }}
+      onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "rgba(255,255,255,0.85)"; }}
     >
       <span style={{ fontSize: 14 }}>♪</span>
       Music

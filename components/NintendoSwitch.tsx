@@ -56,6 +56,7 @@ export default function NintendoSwitch() {
         transform: "translateY(-50%)",
         zIndex: 2,
         pointerEvents: "none",
+        width: 260,
         display: "flex",
         flexDirection: "column",
         alignItems: "stretch",
@@ -158,8 +159,6 @@ function TopJoyCon() {
         background: "radial-gradient(circle at 38% 32%, rgba(80,80,80,0.6), rgba(10,10,10,0.85))",
         border: "2px solid rgba(0,0,0,0.3)",
       }} />
-      {/* D-pad */}
-      <DPad />
     </div>
   );
 }
@@ -197,8 +196,8 @@ function PortraitBody({ src, currentIndex, total, muted, onNextVideo, onToggleMu
       {/* Screen bezel */}
       <div
         style={{
-          width: 146,
-          height: 248,
+          width: 232,
+          height: 390,
           background: "#000",
           borderRadius: 6,
           overflow: "hidden",
@@ -332,8 +331,6 @@ function BottomJoyCon() {
         boxShadow: "inset 0 4px 8px rgba(0,0,0,0.2)",
       }}
     >
-      {/* ABXY diamond */}
-      <ABXYButtons />
       {/* Analog nub */}
       <div style={{
         width: 22, height: 22, borderRadius: "50%",

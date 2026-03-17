@@ -339,11 +339,11 @@ export default function TicketConfirmationSheet({
               marginBottom: 10,
             }}
           >
-            {confirmedMatch ? "✓ Confirmed — Get Directions" : "Get Directions"}
+            {confirmedMatch ? "✓ Confirm Match" : "Continue without match"}
           </button>
 
           <button
-            onClick={() => onConfirm(null)}
+            onClick={onDismiss}
             style={{
               width: "100%",
               padding: "14px",
@@ -354,7 +354,7 @@ export default function TicketConfirmationSheet({
               cursor: "pointer",
             }}
           >
-            Explore without ticket
+            Close
           </button>
         </div>
       </div>

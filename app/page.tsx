@@ -4,7 +4,7 @@
  * page.tsx — root page
  *
  * State machine:
- *   globe → [ticket confirmation sheet] → map → gems → map
+ *   globe → map  (ticket confirmation is a toggle panel inside the map)
  *
  * Core focus: get fans to the right stadium via shuttle + transit.
  * Walking is de-prioritised — these venues are not walkable from most origins.
@@ -21,24 +21,26 @@ import ModeCards from "@/components/ModeCards";
 import MusicPlayer from "@/components/MusicPlayer";
 import NeighborhoodOverlay from "@/components/NeighborhoodOverlay";
 import TicketConfirmationSheet from "@/components/TicketConfirmationSheet";
+import PlayerShowcase, { type DropPhase } from "@/components/PlayerShowcase";
+import PlayerPin from "@/components/PlayerPin";
 
 import { STADIUMS } from "@/data/stadiums";
 import { getHotelsForCity } from "@/data/hotels";
-import { getGemsForCity } from "@/data/hiddenGems";
 import { getShuttleForStadium } from "@/data/shuttles";
 import { getDocksForCity, getProvidersForCity, type MicromobilityProvider } from "@/data/micromobility";
+import { type PlayerId } from "@/data/players";
 import type { Stadium, Anchor, Mode, RouteResult, RouteCache, Hotel } from "@/data/types";
 import type { Match } from "@/data/matches";
+import type mapboxgl from "mapbox-gl";
 import routesData from "@/data/routes.json";
 import { type MapViewHandle } from "@/components/MapView";
 
 const routes = routesData as RouteCache;
 
-// SSR-safe Mapbox imports
-const MapView     = dynamic(() => import("@/components/MapView"),    { ssr: false });
-const GemsMapView = dynamic(() => import("@/components/GemsMapView"), { ssr: false });
+// SSR-safe Mapbox import
+const MapView = dynamic(() => import("@/components/MapView"), { ssr: false });
 
-type ActiveView = "globe" | "map" | "gems";
+type ActiveView = "globe" | "map";
 
 export default function Home() {
   const [activeView, setActiveView]         = useState<ActiveView>("globe");
@@ -55,9 +57,19 @@ export default function Home() {
   const [hotelRoutes, setHotelRoutes]       = useState<Partial<Record<Mode, RouteResult | null>>>({});
 
   // ── Ticket confirmation ────────────────────────────────────────────────────
-  const [showTicketSheet, setShowTicketSheet] = useState(false);
-  const [pendingStadium, setPendingStadium]   = useState<Stadium | null>(null);
+  const [showTicketPanel, setShowTicketPanel] = useState(false);
   const [confirmedMatch, setConfirmedMatch]   = useState<Match | null>(null);
+
+  // ── Player drop navigation ────────────────────────────────────────────────
+  const [selectedPlayer, setSelectedPlayer]       = useState<PlayerId>("messi");
+  const [dropPhase, setDropPhase]                 = useState<DropPhase>("idle");
+  const [playerOrigin, setPlayerOrigin]           = useState<{ lng: number; lat: number } | null>(null);
+  const [playerDest, setPlayerDest]               = useState<{ lng: number; lat: number } | null>(null);
+  const [playerHotelRoutes, setPlayerHotelRoutes] = useState<Partial<Record<Mode, RouteResult | null>>>({});
+  /** Raw Mapbox map instance — populated via onMapReady callback */
+  const mapInstanceRef  = useRef<mapboxgl.Map | null>(null);
+  /** Ref on the map wrapper div — used by PlayerShowcase for drop hit-testing */
+  const mapContainerRef = useRef<HTMLDivElement>(null);
 
   // ── Micromobility provider toggles ────────────────────────────────────────
   const [activeProviders, setActiveProviders] = useState<Set<MicromobilityProvider>>(new Set());
@@ -74,12 +86,14 @@ export default function Home() {
     : selectedStadium.anchors[anchorIndex];
 
   const routeKey    = `${selectedStadium.id}__${activeAnchor.id}__${selectedMode}`;
-  const activeRoute: RouteResult | null = isHotelMode
-    ? (hotelRoutes[selectedMode] ?? null)
-    : ((routes[routeKey] as RouteResult) ?? null);
+  // Suppress the gold anchor route when the player route is active (cyan layer takes over)
+  const activeRoute: RouteResult | null = dropPhase === "ready"
+    ? null
+    : isHotelMode
+      ? (hotelRoutes[selectedMode] ?? null)
+      : ((routes[routeKey] as RouteResult) ?? null);
 
-  const cityHotels  = getHotelsForCity(selectedStadium.id);
-  const cityGems    = getGemsForCity(selectedStadium.id);
+  const cityHotels   = getHotelsForCity(selectedStadium.id);
   const shuttleRoute = getShuttleForStadium(selectedStadium.id);
   const cityDocks   = getDocksForCity(selectedStadium.id);
 
@@ -98,9 +112,8 @@ export default function Home() {
     setOverlayPhase("idle");
   }, []);
 
-  // ── Globe → ticket sheet → map ────────────────────────────────────────────
+  // ── Globe → map (direct, no intermediate sheet) ───────────────────────────
   const handleGlobeStadiumClick = useCallback((stadium: Stadium) => {
-    // Reset state for the new stadium
     setAnchorIndex(0);
     setIsHotelMode(false);
     setSelectedHotel(null);
@@ -108,34 +121,85 @@ export default function Home() {
     setConfirmedMatch(null);
     setActiveProviders(new Set());
     setHeatmapData(null);
-    // Show ticket confirmation before transitioning to map
-    setPendingStadium(stadium);
-    setShowTicketSheet(true);
+    setShowTicketPanel(false);
+    setSelectedStadium(stadium);
+    setSelectedMode("shuttle");
+    transitionTo("map");
+  }, [transitionTo]);
+
+  // ── Ticket panel (in-map toggle) ───────────────────────────────────────────
+  const handleTicketConfirm = useCallback((match: Match | null) => {
+    setConfirmedMatch(match);
+    setShowTicketPanel(false);
   }, []);
 
-  const handleTicketConfirm = useCallback((match: Match | null) => {
-    if (!pendingStadium) return;
-    setConfirmedMatch(match);
-    setShowTicketSheet(false);
-    setSelectedStadium(pendingStadium);
-    setSelectedMode("shuttle");  // default to shuttle — not walking
-    transitionTo("map");
-  }, [pendingStadium, transitionTo]);
-
   const handleTicketDismiss = useCallback(() => {
-    setShowTicketSheet(false);
-    setPendingStadium(null);
+    setShowTicketPanel(false);
   }, []);
 
   // ── Map → Globe ────────────────────────────────────────────────────────────
   const handleBackToGlobe = useCallback(() => {
     setConfirmedMatch(null);
+    // Also clear any active player route
+    setDropPhase("idle");
+    setPlayerOrigin(null);
+    setPlayerDest(null);
+    setPlayerHotelRoutes({});
+    mapRef.current?.setPlayerRoute(null);
     transitionTo("globe");
   }, [transitionTo]);
 
-  // ── Map ↔ Gems ─────────────────────────────────────────────────────────────
-  const handleOpenGems  = useCallback(() => transitionTo("gems"), [transitionTo]);
-  const handleBackFromGems = useCallback(() => transitionTo("map"), [transitionTo]);
+  // ── Player route — receive raw map on load ─────────────────────────────────
+  const handleMapReady = useCallback((map: mapboxgl.Map) => {
+    mapInstanceRef.current = map;
+  }, []);
+
+  // ── Player drop — advances the two-drop state machine ─────────────────────
+  const handlePlayerDrop = useCallback(async (lngLat: { lng: number; lat: number }) => {
+    if (dropPhase === "idle") {
+      setPlayerOrigin(lngLat);
+      setDropPhase("awaiting-dest");
+    } else if (dropPhase === "awaiting-dest" && playerOrigin) {
+      setPlayerDest(lngLat);
+      setDropPhase("ready");
+
+      // Fetch all routed modes (no shuttle — player route uses live API)
+      const ROUTED_MODES = ["transit", "cycling", "walking", "driving"] as const;
+      const origin = playerOrigin;
+
+      const results = await Promise.all(
+        ROUTED_MODES.map(async (mode) => {
+          try {
+            const res = await fetch("/api/hotel-route", {
+              method:  "POST",
+              headers: { "Content-Type": "application/json" },
+              body:    JSON.stringify({
+                originLat: origin.lat, originLng: origin.lng,
+                destLat:   lngLat.lat, destLng:   lngLat.lng,
+                mode,
+              }),
+            });
+            if (!res.ok) return [mode, null] as const;
+            const data = await res.json();
+            return [mode, { stadiumId: "player", anchorId: "player-dest", mode, ...data }] as const;
+          } catch {
+            return [mode, null] as const;
+          }
+        })
+      );
+
+      setPlayerHotelRoutes(Object.fromEntries(results));
+    }
+  }, [dropPhase, playerOrigin]);
+
+  // ── Clear player route ─────────────────────────────────────────────────────
+  const handleClearPlayerRoute = useCallback(() => {
+    setDropPhase("idle");
+    setPlayerOrigin(null);
+    setPlayerDest(null);
+    setPlayerHotelRoutes({});
+    mapRef.current?.setPlayerRoute(null);
+  }, []);
 
   // ── Anchor change ──────────────────────────────────────────────────────────
   const handleAnchorChange = useCallback((anchor: Anchor, idx: number) => {
@@ -203,6 +267,15 @@ export default function Home() {
     return () => { cancelled = true; };
   }, [isHotelMode, selectedHotel, selectedStadium]);
 
+  // ── Sync player route layer with selected mode ────────────────────────────
+  // Runs whenever the player route is ready and the user switches modes.
+  useEffect(() => {
+    if (dropPhase !== "ready") return;
+    const routedMode = selectedMode as Exclude<Mode, "shuttle">;
+    const result = playerHotelRoutes[routedMode];
+    mapRef.current?.setPlayerRoute(result?.geometry ?? null);
+  }, [dropPhase, selectedMode, playerHotelRoutes]);
+
   // ── Provider toggle ────────────────────────────────────────────────────────
   const toggleProvider = useCallback((provider: MicromobilityProvider) => {
     setActiveProviders((prev) => {
@@ -228,7 +301,7 @@ export default function Home() {
 
       {/* ── Map view ────────────────────────────────────────────────────────── */}
       {activeView === "map" && (
-        <div style={{ position: "absolute", inset: 0 }}>
+        <div ref={mapContainerRef} style={{ position: "absolute", inset: 0 }}>
           <MapView
             ref={mapRef}
             stadiumLat={selectedStadium.coords.lat}
@@ -239,6 +312,7 @@ export default function Home() {
             micromobilityDocks={cityDocks}
             activeProviders={activeProviders}
             neighborhoodHeatmap={heatmapData}
+            onMapReady={handleMapReady}
           />
 
           {/* Vignette fog */}
@@ -253,54 +327,47 @@ export default function Home() {
             }}
           />
 
+          {/* ── Player showcase + map pins ──────────────────────────────────── */}
+          <PlayerShowcase
+            map={mapInstanceRef.current}
+            mapContainerRef={mapContainerRef}
+            dropPhase={dropPhase}
+            onDrop={handlePlayerDrop}
+            onPlayerSelect={setSelectedPlayer}
+          />
+          {playerOrigin && mapInstanceRef.current && (
+            <PlayerPin
+              playerId={selectedPlayer}
+              lngLat={playerOrigin}
+              map={mapInstanceRef.current}
+              label="ORIGIN"
+            />
+          )}
+          {playerDest && mapInstanceRef.current && (
+            <PlayerPin
+              playerId={selectedPlayer}
+              lngLat={playerDest}
+              map={mapInstanceRef.current}
+              label="DESTINATION"
+            />
+          )}
+
           {/* Back to globe */}
           <GlobeBackButton onClick={handleBackToGlobe} />
 
-          {/* Hidden Gems button */}
-          <button
-            onClick={handleOpenGems}
-            style={{
-              position: "absolute",
-              top: 70,
-              left: 20,
-              zIndex: 10,
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              padding: "7px 14px",
-              background: "rgba(5,5,9,0.9)",
-              border: "1px solid rgba(74,222,128,0.35)",
-              cursor: "pointer",
-              transition: "all 0.15s ease",
-            }}
-            onMouseEnter={(e) => {
-              (e.currentTarget).style.background = "rgba(74,222,128,0.1)";
-              (e.currentTarget).style.borderColor = "#4ade80";
-            }}
-            onMouseLeave={(e) => {
-              (e.currentTarget).style.background = "rgba(5,5,9,0.9)";
-              (e.currentTarget).style.borderColor = "rgba(74,222,128,0.35)";
-            }}
-          >
-            <span style={{ fontSize: 14 }}>📍</span>
-            <span style={{ fontFamily: "var(--street-font)", fontSize: 10, fontWeight: 800, fontStyle: "italic", textTransform: "uppercase", letterSpacing: "0.2em", color: "#4ade80" }}>
-              Hidden Gems
-            </span>
-          </button>
-
-          {/* Neighbourhood heatmap overlay */}
+          {/* Where to Stay — neighbourhood heatmap overlay */}
           <NeighborhoodOverlay
             cityId={selectedStadium.id}
             onHeatmapData={setHeatmapData}
           />
 
-          {/* Micromobility provider toggles */}
+          {/* Micromobility provider toggles — top-right */}
           {cityProviders.length > 0 && (
             <div
               style={{
                 position: "absolute",
-                bottom: 24,
-                left: 20,
+                top: 20,
+                right: 24,
                 zIndex: 10,
                 display: "flex",
                 flexDirection: "column",
@@ -338,6 +405,15 @@ export default function Home() {
             </div>
           )}
 
+          {/* Ticket confirmation panel — toggleable from HUD header */}
+          {showTicketPanel && (
+            <TicketConfirmationSheet
+              stadium={selectedStadium}
+              onConfirm={handleTicketConfirm}
+              onDismiss={handleTicketDismiss}
+            />
+          )}
+
           {/* FIFA Soundtrack Player */}
           <MusicPlayer />
 
@@ -347,10 +423,11 @@ export default function Home() {
               position: "absolute",
               bottom: 24,
               right: 24,
-              width: 400,
+              width: 380,
               zIndex: 10,
               display: "flex",
               flexDirection: "column",
+              maxHeight: "calc(100vh - 48px)",
               background: "var(--street-panel-bg)",
               borderLeft: "3px solid var(--accent-gold)",
               boxShadow: "0 0 60px rgba(0,0,0,0.8), -4px 0 30px rgba(212,160,23,0.06)",
@@ -364,28 +441,77 @@ export default function Home() {
                 borderBottom: "2px solid var(--accent-gold)",
               }}
             >
-              {/* Confirmed match badge */}
-              {confirmedMatch && (
+              {/* Player route active indicator + clear button */}
+              {dropPhase === "ready" && (
                 <div
                   style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 6,
-                    marginBottom: 6,
-                    padding: "4px 8px",
-                    background: "rgba(34,197,94,0.1)",
-                    border: "1px solid rgba(34,197,94,0.3)",
+                    display:        "flex",
+                    alignItems:     "center",
+                    gap:            8,
+                    marginBottom:   8,
+                    padding:        "6px 10px",
+                    background:     "rgba(0,229,255,0.07)",
+                    border:         "1px solid rgba(0,229,255,0.3)",
                   }}
                 >
-                  <span style={{ fontSize: 10 }}>✅</span>
-                  <span style={{ fontFamily: "var(--font-geist-sans)", fontSize: 9, color: "#4ade80" }}>
-                    {confirmedMatch.round} · {confirmedMatch.kickoff}
+                  <span style={{ fontSize: 10 }}>🎮</span>
+                  <span style={{ fontFamily: "var(--street-font)", fontSize: 8, fontWeight: 700, fontStyle: "italic", textTransform: "uppercase", letterSpacing: "0.15em", color: "#00E5FF", flex: 1 }}>
+                    Player Route Active
                   </span>
-                  <span style={{ fontFamily: "var(--font-geist-mono)", fontSize: 8, color: "rgba(74,222,128,0.6)", marginLeft: "auto" }}>
-                    {confirmedMatch.id}
-                  </span>
+                  <button
+                    onClick={handleClearPlayerRoute}
+                    style={{
+                      fontFamily:    "var(--street-font)",
+                      fontSize:      7,
+                      fontWeight:    700,
+                      fontStyle:     "italic",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.15em",
+                      color:         "rgba(255,255,255,0.4)",
+                      background:    "none",
+                      border:        "1px solid rgba(255,255,255,0.15)",
+                      cursor:        "pointer",
+                      padding:       "2px 6px",
+                    }}
+                  >
+                    Clear ✕
+                  </button>
                 </div>
               )}
+
+              {/* Ticket toggle bar */}
+              <button
+                onClick={() => setShowTicketPanel((v) => !v)}
+                style={{
+                  width: "100%",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  marginBottom: 10,
+                  padding: "7px 10px",
+                  background: showTicketPanel
+                    ? "rgba(245,200,66,0.12)"
+                    : confirmedMatch
+                      ? "rgba(34,197,94,0.08)"
+                      : "rgba(255,255,255,0.05)",
+                  border: `1px solid ${showTicketPanel ? "rgba(245,200,66,0.4)" : confirmedMatch ? "rgba(34,197,94,0.3)" : "rgba(255,255,255,0.1)"}`,
+                  cursor: "pointer",
+                  transition: "all 0.15s",
+                }}
+              >
+                <span style={{ fontSize: 13 }}>🎫</span>
+                <span style={{ fontFamily: "var(--street-font)", fontSize: 9, fontWeight: 700, fontStyle: "italic", textTransform: "uppercase", letterSpacing: "0.18em", color: confirmedMatch ? "#4ade80" : "rgba(255,255,255,0.55)", flex: 1, textAlign: "left" }}>
+                  {confirmedMatch ? `${confirmedMatch.round} · ${confirmedMatch.kickoff}` : "My Ticket"}
+                </span>
+                {confirmedMatch && (
+                  <span style={{ fontFamily: "var(--font-geist-mono)", fontSize: 8, color: "rgba(74,222,128,0.5)" }}>
+                    {confirmedMatch.id}
+                  </span>
+                )}
+                <span style={{ fontSize: 9, color: "rgba(255,255,255,0.3)", marginLeft: 4 }}>
+                  {showTicketPanel ? "▲" : "▼"}
+                </span>
+              </button>
 
               <div style={{ fontFamily: "var(--street-font)", fontSize: 9, fontWeight: 700, fontStyle: "italic", textTransform: "uppercase", letterSpacing: "0.38em", color: "rgba(245,200,66,0.65)", marginBottom: 2 }}>
                 Stadium
@@ -398,8 +524,8 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Panel content */}
-            <div style={{ display: "flex", flexDirection: "column", gap: 16, padding: "18px 20px 22px" }}>
+            {/* Panel content — scrollable so it never overflows the viewport */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 14, padding: "14px 18px 18px", overflowY: "auto" }}>
 
               <AnchorCarousel
                 anchors={selectedStadium.anchors}
@@ -418,34 +544,23 @@ export default function Home() {
                 anchorId={activeAnchor.id}
                 selectedMode={selectedMode}
                 onModeSelect={setSelectedMode}
-                hotelRoutes={isHotelMode ? hotelRoutes : undefined}
-                shuttleRoute={shuttleRoute}
+                hotelRoutes={
+                  // Player route overrides all other route sources when active
+                  dropPhase === "ready"
+                    ? playerHotelRoutes
+                    : isHotelMode
+                      ? hotelRoutes
+                      : undefined
+                }
+                shuttleRoute={
+                  // Hide shuttle when player route is active (no shuttle for free-form routes)
+                  dropPhase === "ready" ? null : shuttleRoute
+                }
               />
 
             </div>
           </div>
         </div>
-      )}
-
-      {/* ── Gems view ───────────────────────────────────────────────────────── */}
-      {activeView === "gems" && (
-        <div style={{ position: "absolute", inset: 0 }}>
-          <GemsMapView
-            cityCoords={selectedStadium.coords}
-            cityName={selectedStadium.city}
-            gems={cityGems}
-            onBack={handleBackFromGems}
-          />
-        </div>
-      )}
-
-      {/* ── Ticket confirmation sheet (over globe, before map transition) ──── */}
-      {showTicketSheet && pendingStadium && (
-        <TicketConfirmationSheet
-          stadium={pendingStadium}
-          onConfirm={handleTicketConfirm}
-          onDismiss={handleTicketDismiss}
-        />
       )}
 
       {/* ── Crossfade overlay ────────────────────────────────────────────────── */}

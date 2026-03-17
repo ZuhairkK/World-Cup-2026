@@ -198,6 +198,9 @@ export default function AnchorCarousel({
             display: "flex",
             flexDirection: "column",
             gap: 6,
+            maxHeight: 220,
+            overflowY: "auto",
+            paddingRight: 4,
           }}
         >
           <p
