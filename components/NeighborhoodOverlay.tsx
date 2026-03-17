@@ -13,7 +13,37 @@
  */
 
 import { useState, useEffect, useCallback } from "react";
-import { getScoresForCity, computeOverall, type NeighborhoodScore } from "@/data/neighborhoodScores";
+import { supabase } from "@/lib/supabase";
+
+// ─── Local score type (mirrors the Supabase neighborhood_scores table) ─────────
+interface NeighborhoodScore {
+  id:                   string;
+  name:                 string;
+  city_id:              string;
+  transit_density:      number;
+  shuttle_access:       number;
+  transfers_to_stadium: number;
+  walk_to_transit:      number;
+  overall:              number;
+  transit_summary:      string;
+}
+
+/**
+ * Recalculates the overall score given user-adjusted factor weights (0–3 each).
+ * Weights are normalised internally so they don't need to sum to any fixed value.
+ */
+function computeOverall(score: NeighborhoodScore, weights: Weights): number {
+  const total =
+    weights.transitDensity + weights.shuttleAccess +
+    weights.transfersToStadium + weights.walkToTransit;
+  if (total === 0) return score.overall;
+  return (
+    score.transit_density      * weights.transitDensity     +
+    score.shuttle_access       * weights.shuttleAccess      +
+    score.transfers_to_stadium * weights.transfersToStadium +
+    score.walk_to_transit      * weights.walkToTransit
+  ) / total;
+}
 
 interface Weights {
   transitDensity:     number;
@@ -55,9 +85,19 @@ export default function NeighborhoodOverlay({ cityId, onHeatmapData }: Neighborh
   const [weights, setWeights]   = useState<Weights>(DEFAULT_WEIGHTS);
   const [scores, setScores]     = useState<NeighborhoodScore[]>([]);
 
-  // Load scores whenever the city changes
+  // Fetch scores from Supabase whenever the city changes
   useEffect(() => {
-    setScores(getScoresForCity(cityId));
+    supabase
+      .from("neighborhood_scores")
+      .select("*")
+      .eq("city_id", cityId)
+      .then(({ data, error }) => {
+        if (error) {
+          console.error("Failed to fetch neighborhood scores:", error.message);
+          return;
+        }
+        setScores((data as NeighborhoodScore[]) ?? []);
+      });
   }, [cityId]);
 
   // Rebuild GeoJSON whenever scores or weights change and overlay is open
@@ -92,7 +132,7 @@ export default function NeighborhoodOverlay({ cityId, onHeatmapData }: Neighborh
             properties: {
               ...feature.properties,
               overall,
-              transitSummary: scoreEntry?.transitSummary ?? "",
+              transitSummary: scoreEntry?.transit_summary ?? "",
             },
           };
         }),
@@ -263,7 +303,7 @@ export default function NeighborhoodOverlay({ cityId, onHeatmapData }: Neighborh
                   </span>
                 </div>
                 <span style={{ fontFamily: "var(--font-geist-sans)", fontSize: 8, color: "rgba(255,255,255,0.35)", lineHeight: 1.4 }}>
-                  {n.transitSummary}
+                  {n.transit_summary}
                 </span>
               </div>
             ))}

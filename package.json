@@ -7,12 +7,14 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "fetch-routes": "npx ts-node --project tsconfig.json scripts/fetch-routes.ts"
+    "fetch-routes": "npx ts-node --project tsconfig.json scripts/fetch-routes.ts",
+    "seed:neighborhoods": "npx ts-node --project tsconfig.json scripts/seed-neighborhoods.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.5.0",
+    "@supabase/supabase-js": "^2.99.2",
     "@types/mapbox-gl": "^3.4.1",
     "mapbox-gl": "^3.20.0",
     "next": "16.1.6",
@@ -22,9 +24,11 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "@types/adm-zip": "^0.5.8",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "adm-zip": "^0.5.16",
     "dotenv": "^17.3.1",
     "eslint": "^9",
     "eslint-config-next": "16.1.6",

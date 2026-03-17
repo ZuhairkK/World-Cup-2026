@@ -63,6 +63,54 @@ Reframed the app's core purpose around two flows: (1) best connection to the FIF
 
 ---
 
+# Neighborhood Heatmap — GTFS + Supabase Plan
+
+**Overall Progress:** `100%`
+
+## TLDR
+Replace hand-crafted static neighborhood transit scores with real data computed from official GTFS Static feeds (TransLink, TTC, ETS), stored in Supabase. `NeighborhoodOverlay` fetches scores from Supabase at runtime instead of importing from a local `.ts` file. All other static data files remain unchanged.
+
+## Critical Decisions
+- **GTFS Static only** — not Realtime. Stop density and walk distances are what we need, not live vehicle positions.
+- **GTFS drives `transitDensity` + `walkToTransit` only** — `shuttleAccess` and `transfersToStadium` stay hand-crafted (FIFA shuttle data and transfer counts aren't in GTFS).
+- **Client-side Supabase JS client** — scores are public read-only; no API route needed. Anon key + RLS public SELECT policy is the correct pattern.
+- **One-time seed script** — not a live sync. GTFS feeds are stable enough for the World Cup window.
+- **Only neighborhood scores move to Supabase** — hotels, matches, stadiums, etc. stay as static `.ts` files.
+
+## Tasks
+
+- [x] 🟩 **Step 1: Supabase Project Setup**
+  - [x] 🟩 Install `@supabase/supabase-js`
+  - [x] 🟩 Add `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` to `.env.local`
+  - [x] 🟩 Create `lib/supabase.ts` — single exported Supabase client instance
+
+- [x] 🟩 **Step 2: Database Schema**
+  - [x] 🟩 Create `neighborhood_scores` table in Supabase with columns: `id`, `name`, `city_id`, `transit_density`, `shuttle_access`, `transfers_to_stadium`, `walk_to_transit`, `overall`, `transit_summary`
+  - [x] 🟩 Enable RLS on the table with a public `SELECT` policy (anon role)
+
+- [x] 🟩 **Step 3: GTFS Seed Script**
+  - [x] 🟩 Install seed-only deps: `adm-zip` (point-in-polygon + CSV parsing implemented natively)
+  - [x] 🟩 Write `scripts/seed-neighborhoods.ts`:
+    - Download GTFS Static zip from TransLink, TTC, and ETS
+    - Parse `stops.txt` for each feed
+    - Load the three neighborhood GeoJSON files from `/public/geodata/`
+    - Per neighborhood: count stops within polygon → normalise to 0–10 → `transit_density`
+    - Per neighborhood centroid: distance to nearest stop → normalise to 0–10 → `walk_to_transit`
+    - Merge with hand-crafted `shuttle_access` + `transfers_to_stadium` values (ported from `neighborhoodScores.ts`)
+    - Upsert all rows into Supabase `neighborhood_scores`
+  - [x] 🟩 Add `"seed:neighborhoods": "npx ts-node ..."` to `package.json`
+
+- [x] 🟩 **Step 4: Update `NeighborhoodOverlay`**
+  - [x] 🟩 Replace `getScoresForCity` import with a Supabase query (`.from("neighborhood_scores").select("*").eq("city_id", cityId)`)
+  - [x] 🟩 Run query inside the existing `useEffect` that watches `cityId`
+  - [x] 🟩 Remove the now-unused import from `neighborhoodScores.ts`
+
+- [x] 🟩 **Step 5: Cleanup**
+  - [x] 🟩 Delete `data/neighborhoodScores.ts`
+  - [x] 🟩 Verify heatmap renders correctly for all three cities (tsc --noEmit: 0 errors)
+
+---
+
 # Globe Flag Overlay Plan
 
 **Overall Progress:** `100%`
